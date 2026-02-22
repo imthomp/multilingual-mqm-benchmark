@@ -1,0 +1,35 @@
+# Data and results (too large / possibly sensitive)
+data/
+results/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# HuggingFace cache
+.cache/
+
+# SLURM job outputs
+*.out
+*.err
+slurm-*.out

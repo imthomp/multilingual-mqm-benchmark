@@ -1,0 +1,48 @@
+[data]
+# Paths to annotation files per language (fill in after data transfer)
+# Format: lang_code = "path/to/file.csv"
+# Supported formats: CSV, TSV, JSON
+# Expected columns: segment_id, source, hypothesis, reference, error_type, severity, error_start, error_end
+annotations_dir = "data/annotations"
+output_dir = "results"
+
+# Language resource tiers
+[data.resource_tiers]
+high = ["es", "pt"]
+medium = ["th", "hr", "tl", "hy"]
+low = ["ht", "lo", "mh", "nv", "gil", "to"]
+
+[metrics]
+# Which metrics to run (comment out to skip)
+run = ["bleu", "chrf", "bertscore", "comet", "xcomet"]
+# gemba requires an LLM — configure separately
+run_gemba = false
+gemba_model = ""
+
+# BERTScore language model overrides (uses multilingual by default)
+[metrics.bertscore]
+model = "microsoft/mdeberta-v3-base"
+batch_size = 32
+
+# COMET model
+[metrics.comet]
+model = "Unbabel/wmt22-comet-da"
+batch_size = 16
+gpus = 1
+
+# xCOMET model
+[metrics.xcomet]
+model = "Unbabel/XCOMET-XL"
+batch_size = 8
+gpus = 1
+
+[slurm_job]
+use_slurm = false
+job_name = "mqmbench"
+time = "04:00:00"
+ntasks = 1
+nodes = 1
+mem_per_cpu = "32G"
+gpus = 1
+conda_env = "mqmbench"
+qos = ""

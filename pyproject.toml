@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mqmbench"
+version = "0.1.0"
+description = "Multilingual MQM benchmark for MT metric evaluation across 12 languages"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "Apache-2.0"}
+dependencies = [
+    "dynaconf",
+    "sacrebleu",
+    "scipy",
+    "pandas",
+    "jinja2",
+]
+
+[project.optional-dependencies]
+# Install with: pip install -e ".[metrics]"
+metrics = [
+    "bert-score",
+    "unbabel-comet",
+    "transformers",
+    "torch",
+]
+# Install with: pip install -e ".[dev]"
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "flake8>=6.0",
+]
+all = [
+    "mqmbench[metrics]",
+    "mqmbench[dev]",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.black]
+line-length = 88
+target-version = ["py39", "py310", "py311"]
