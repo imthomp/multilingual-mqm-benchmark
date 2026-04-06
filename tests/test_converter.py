@@ -89,7 +89,7 @@ class TestAnnotationsToSentenceScores:
         assert len(result) == 0
 
     def test_unknown_severity_raises(self):
-        df = _make_df([{"error_type": "grammar", "severity": "critical"}])
+        df = _make_df([{"error_type": "grammar", "severity": "extreme"}])
         with pytest.raises(ValueError, match="Unknown severity"):
             annotations_to_sentence_scores(df)
 

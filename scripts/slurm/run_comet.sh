@@ -13,11 +13,8 @@
 export OMP_NUM_THREADS=$SLURM_CPUS_ON_NODE
 export HF_HUB_OFFLINE=1
 
-echo "Running COMET evaluation..."
-
-mamba activate mqmbench
+cd "$SLURM_SUBMIT_DIR"
 
 nvidia-smi || echo "nvidia-smi not available"
 
-# Override settings to run only COMET/xCOMET
-srun python3 scripts/run_pipeline.py --settings settings.toml
+srun .venv/bin/python scripts/run_pipeline.py --settings settings.toml

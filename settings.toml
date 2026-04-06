@@ -1,48 +1,87 @@
-[data]
-# Paths to annotation files per language (fill in after data transfer)
-# Format: lang_code = "path/to/file.csv"
-# Supported formats: CSV, TSV, JSON
-# Expected columns: segment_id, source, hypothesis, reference, error_type, severity, error_start, error_end
-annotations_dir = "data/annotations"
-output_dir = "results"
+[languages]
+# Resource tier classification drives the main analysis plots.
+[languages.resource_tiers]
+high   = ["de", "zh", "ru", "he"]
+medium = ["es", "cs", "tr", "uk"]
+low    = ["ha", "km", "ps", "sw", "ht", "lo"]
 
-# Language resource tiers
-[data.resource_tiers]
-high = ["es", "pt"]
-medium = ["th", "hr", "tl", "hy"]
-low = ["ht", "lo", "mh", "nv", "gil", "to"]
+# Language family groupings (for secondary analysis per Dr. Fulda's suggestion)
+[languages.families]
+indo_european = ["de", "ru", "es", "cs", "uk", "ps"]   # ps = Iranian branch
+afro_asiatic  = ["he", "ha"]                            # he = Semitic, ha = Chadic
+sino_tibetan  = ["zh"]
+turkic        = ["tr"]
+austroasiatic = ["km"]
+tai_kadai     = ["lo"]
+niger_congo   = ["sw"]
+creole        = ["ht"]
+
+# Script type (logographic vs phonographic — per Dr. Fulda)
+[languages.script_type]
+logographic  = ["zh"]                                        # character = morpheme/word
+alphabetic   = ["de", "ru", "es", "cs", "uk", "tr", "sw", "ha", "ht"]  # true alphabets
+abjad        = ["he", "ps"]                                  # consonant-primary (Hebrew, Arabic)
+abugida      = ["km", "lo"]                                  # Brahmic-derived (Khmer, Lao)
+
+[data]
+# HuggingFace dataset IDs
+wmt_mqm_dataset    = "RicardoRei/wmt-mqm-human-evaluation"
+wmt_da_dataset     = "RicardoRei/wmt-da-human-evaluation"
+flores_dataset     = "openlanguagedata/flores_plus"
+flores_split       = "devtest"
+nllb_model         = "facebook/nllb-200-distilled-600M"
+
+# Tier 1a: WMT MQM language pairs to load.
+# Confirmed: en-de (WMT20-23), zh-en (WMT20-23), en-ru (WMT21/22), he-en (WMT23).
+# en-es (WMT24) is checked at runtime and silently dropped if absent.
+wmt_mqm_pairs = ["en-de", "zh-en", "en-ru", "he-en", "en-es"]
+
+# Tier 1b: WMT DA target languages.
+# Available in RicardoRei/wmt-da-human-evaluation (confirmed):
+#   cs, de, et, fi, fr, gu, ha, hi, is, ja, kk, km, lt, lv, pl, ps, ru, ta, tr, uk, xh, zh, zu
+wmt_da_target_langs = ["cs", "tr", "uk", "ha", "km", "ps"]
+
+# Tier 2: languages with no human annotations — FLORES+/NLLB/synthetic only.
+# Distinct from resource_tiers.low, which also includes ha/km/ps (covered by Tier 1b).
+tier2_langs = ["sw", "ht", "lo"]
+
+cache_dir  = "data/cache"
+results_dir = "results"
 
 [metrics]
-# Which metrics to run (comment out to skip)
+# Metrics to run. Comment out any you want to skip.
 run = ["bleu", "chrf", "bertscore", "comet", "xcomet"]
-# gemba requires an LLM — configure separately
-run_gemba = false
-gemba_model = ""
 
-# BERTScore language model overrides (uses multilingual by default)
+# GEMBA as an evaluated metric (same local model, HF pipeline).
+# Also used as the LLM for Tier 2 synthetic MQM annotation generation.
+# Pre-download on a login node before submitting SLURM jobs:
+#   python -c "from transformers import AutoTokenizer, AutoModelForCausalLM; AutoTokenizer.from_pretrained('meta-llama/Llama-3.1-8B-Instruct'); AutoModelForCausalLM.from_pretrained('meta-llama/Llama-3.1-8B-Instruct')"
+# Alternatives: "meta-llama/Llama-3.1-70B-Instruct" (better quality, needs 2+ GPUs)
+#               "Qwen/Qwen2.5-14B-Instruct" (strong multilingual, especially CJK)
+run_gemba   = false
+gemba_model = "meta-llama/Llama-3.1-8B-Instruct"
+
 [metrics.bertscore]
-model = "microsoft/mdeberta-v3-base"
+model      = "microsoft/mdeberta-v3-base"
 batch_size = 32
 
-# COMET model
 [metrics.comet]
-model = "Unbabel/wmt22-comet-da"
+model      = "Unbabel/wmt22-comet-da"
 batch_size = 16
-gpus = 1
+gpus       = 1
 
-# xCOMET model
 [metrics.xcomet]
-model = "Unbabel/XCOMET-XL"
+model      = "Unbabel/XCOMET-XL"
 batch_size = 8
-gpus = 1
+gpus       = 1
 
 [slurm_job]
-use_slurm = false
-job_name = "mqmbench"
-time = "04:00:00"
-ntasks = 1
-nodes = 1
+use_slurm   = false
+job_name    = "mqmbench"
+time        = "04:00:00"
+ntasks      = 1
+nodes       = 1
 mem_per_cpu = "32G"
-gpus = 1
-conda_env = "mqmbench"
-qos = ""
+gpus        = 1
+conda_env   = "mqmbench"
+qos         = ""
