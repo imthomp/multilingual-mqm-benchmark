@@ -26,6 +26,9 @@ env/
 # OS
 .DS_Store
 
+# Core dumps
+core.*
+
 # HuggingFace cache
 .cache/
 
