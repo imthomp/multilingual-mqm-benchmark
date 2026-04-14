@@ -48,9 +48,19 @@ tier2_langs = ["sw", "ht", "lo"]
 cache_dir  = "data/cache"
 results_dir = "results"
 
+# Optional: path to google/wmt-mqm-human-evaluation TSV files for span-level
+# accuracy vs. fluency category analysis. Download from:
+#   https://github.com/google/wmt-mqm-human-evaluation
+# Leave empty to skip category correlation.
+wmt_mqm_span_dir = "../wmt-mqm-human-evaluation"
+
 [metrics]
 # Metrics to run. Comment out any you want to skip.
-run = ["bleu", "chrf", "bertscore", "comet", "xcomet"]
+# xcomet and cometkiwi require pre-caching via COMET library on login node before
+# submitting (HF_HUB_OFFLINE=1 on compute nodes breaks download_model at runtime).
+# Future work: run `from comet import download_model; download_model("Unbabel/XCOMET-XL")`
+# and `download_model("Unbabel/wmt22-cometkiwi-da")` on login node, then re-add here.
+run = ["bleu", "chrf", "bertscore", "comet"]
 
 # GEMBA as an evaluated metric (same local model, HF pipeline).
 # Also used as the LLM for Tier 2 synthetic MQM annotation generation.
@@ -73,6 +83,11 @@ gpus       = 1
 [metrics.xcomet]
 model      = "Unbabel/XCOMET-XL"
 batch_size = 8
+gpus       = 1
+
+[metrics.cometkiwi]
+model      = "Unbabel/wmt22-cometkiwi-da"
+batch_size = 16
 gpus       = 1
 
 [slurm_job]

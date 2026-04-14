@@ -1,5 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=mqmbench_synth
+#SBATCH --partition=dw
+#SBATCH --qos=matrix
 #SBATCH --time=08:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1

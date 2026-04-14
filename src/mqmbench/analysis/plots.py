@@ -91,7 +91,7 @@ def plot_nontranslation_detection(scores_df: pd.DataFrame, out_path):
     if mqm_df.empty:
         return
 
-    metric_cols = [c for c in ["bleu", "chrf", "bertscore", "comet", "xcomet", "gemba"]
+    metric_cols = [c for c in ["bleu", "chrf", "bertscore", "comet", "xcomet", "cometkiwi", "gemba"]
                    if c in mqm_df.columns]
     if not metric_cols:
         return

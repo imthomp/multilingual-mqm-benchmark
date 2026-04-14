@@ -1,6 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=mqmbench_nllb
-#SBATCH --time=04:00:00
+#SBATCH --partition=dw
+#SBATCH --qos=matrix
+#SBATCH --time=02:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --mem=32G

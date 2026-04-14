@@ -29,10 +29,12 @@ env/
 # Core dumps
 core.*
 
+# LaTeX report (compiled on Overleaf)
+latex/
+
 # HuggingFace cache
 .cache/
 
 # SLURM job outputs
-*.out
+logs/
 *.err
-slurm-*.out

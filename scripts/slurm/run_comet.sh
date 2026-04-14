@@ -1,11 +1,13 @@
 #!/bin/bash --login
 
 #SBATCH --job-name=mqmbench_comet
-#SBATCH --time=04:00:00
+#SBATCH --partition=dw
+#SBATCH --qos=matrix
+#SBATCH --time=08:00:00
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
-#SBATCH --mem-per-cpu=32G
-#SBATCH --gpus=1
+#SBATCH --mem=128G
+#SBATCH --gres=gpu:1
 #SBATCH --requeue
 #SBATCH --signal=SIGHUP@90
 #SBATCH --output=mqmbench_comet_%j.out

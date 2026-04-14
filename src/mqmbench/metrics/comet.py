@@ -46,6 +46,24 @@ def score(
     return output.scores
 
 
+def score_kiwi(
+    sources: list[str],
+    hypotheses: list[str],
+    model_name: str = "Unbabel/wmt22-cometkiwi-da",
+    batch_size: int = 16,
+    gpus: int = 0,
+) -> list[float]:
+    """Compute COMET-Kiwi (reference-free QE) scores.
+
+    Uses only source + hypothesis — no reference required. Useful for
+    low-resource languages where reference quality may be poor.
+    """
+    model = _load_model(model_name)
+    data = [{"src": src, "mt": hyp} for src, hyp in zip(sources, hypotheses)]
+    output = model.predict(data, batch_size=batch_size, gpus=gpus)
+    return output.scores
+
+
 def score_xcomet(
     sources: list[str],
     hypotheses: list[str],

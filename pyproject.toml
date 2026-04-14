@@ -11,6 +11,7 @@ requires-python = ">=3.9"
 license = {text = "Apache-2.0"}
 dependencies = [
     "dynaconf",
+    "setuptools==69.5.1",
     "sacrebleu",
     "scipy>=1.10.0",
     "pandas>=2.0.0",
@@ -56,3 +57,11 @@ python_functions = ["test_*"]
 [tool.black]
 line-length = 88
 target-version = ["py39", "py310", "py311"]
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
