@@ -19,28 +19,36 @@ from mqmbench.constants import AnnotationTier
 
 RESOURCE_TIERS = {
     "high":   ["de", "zh", "ru", "he"],
-    "medium": ["es", "cs", "tr", "uk"],
+    "medium": ["es", "cs", "tr", "uk", "fr", "pl", "fi", "et", "is", "lt", "lv",
+               "bn", "hi", "gu", "ta", "ja", "kk", "xh", "zu"],
     "low":    ["ha", "km", "ps", "sw", "ht", "lo"],
 }
 
 # Language family groupings for secondary analysis
 LANGUAGE_FAMILIES = {
-    "indo_european": ["de", "ru", "es", "cs", "uk", "ps"],  # ps = Iranian branch
-    "afro_asiatic":  ["he", "ha"],   # he = Semitic, ha = Chadic
+    "indo_european": ["de", "ru", "es", "cs", "uk", "ps",   # Germanic/Slavic/Romance/Iranian
+                      "fr", "pl", "is", "lt", "lv",          # Romance/Baltic/Nordic
+                      "bn", "hi", "gu"],                      # Indo-Aryan
+    "afro_asiatic":  ["he", "ha"],       # he = Semitic, ha = Chadic
     "sino_tibetan":  ["zh"],
-    "turkic":        ["tr"],
+    "turkic":        ["tr", "kk"],       # Turkish + Kazakh
     "austroasiatic": ["km"],
     "tai_kadai":     ["lo"],
-    "niger_congo":   ["sw"],
+    "niger_congo":   ["sw", "xh", "zu"],  # Bantu family
     "creole":        ["ht"],
+    "dravidian":     ["ta"],
+    "japonic":       ["ja"],
+    "uralic":        ["fi", "et"],
 }
 
 # Script type per Dr. Fulda's suggestion: logographic vs. phonographic
 SCRIPT_TYPES = {
-    "logographic": ["zh"],                                  # character = morpheme/word
-    "alphabetic":  ["de", "ru", "es", "cs", "uk", "tr", "sw", "ha", "ht"],  # true alphabets
-    "abjad":       ["he", "ps"],                            # consonant-primary (Hebrew, Arabic)
-    "abugida":     ["km", "lo"],                            # Brahmic-derived (Khmer, Lao)
+    "logographic": ["zh", "ja"],                             # character = morpheme/word; ja = kanji+kana
+    "alphabetic":  ["de", "ru", "es", "cs", "uk", "tr", "sw", "ha", "ht",
+                    "fr", "pl", "is", "lt", "lv", "kk",
+                    "xh", "zu", "fi", "et"],                 # Latin/Cyrillic
+    "abjad":       ["he", "ps"],                             # consonant-primary (Hebrew, Arabic)
+    "abugida":     ["km", "lo", "bn", "hi", "gu", "ta"],    # Brahmic-derived
 }
 
 ACCURACY_ERRORS = {"mistranslation", "omission", "addition", "untranslated"}
@@ -129,6 +137,52 @@ def pairwise_accuracy(
 
     concordant = ((h_d > 0) == (m_d > 0))[valid].sum()
     return float(concordant / valid.sum())
+
+
+def soft_pairwise_accuracy(
+    human_scores: list[float],
+    metric_scores: list[float],
+    max_n: int = 8000,
+    seed: int = 42,
+) -> float:
+    """WMT 2024 Soft Pairwise Accuracy (SPA).
+
+    Like pairwise accuracy, but metric-tied pairs contribute 0.5 rather than
+    being excluded from the denominator. Only human-tied pairs are excluded.
+    This is the segment-level meta-evaluation standard from WMT 2024.
+
+    Reference: Thompson et al., WMT 2024 Metrics Shared Task.
+    """
+    h = np.array(human_scores, dtype=float)
+    m = np.array(metric_scores, dtype=float)
+    n = len(h)
+    if n < 2:
+        return float("nan")
+
+    if n > max_n:
+        rng = np.random.default_rng(seed)
+        idx = rng.choice(n, size=max_n, replace=False)
+        h, m = h[idx], m[idx]
+        n = max_n
+
+    h_diff = h[:, None] - h[None, :]
+    m_diff = m[:, None] - m[None, :]
+    mask = np.triu(np.ones((n, n), dtype=bool), k=1)
+    h_d = h_diff[mask]
+    m_d = m_diff[mask]
+
+    # Exclude human-tied pairs
+    valid = h_d != 0
+    if valid.sum() == 0:
+        return float("nan")
+
+    h_d_v = h_d[valid]
+    m_d_v = m_d[valid]
+    # Concordant = metric agrees with human direction; tied metric = 0.5
+    concordant = (h_d_v > 0) == (m_d_v > 0)
+    tied = m_d_v == 0
+    scores = np.where(tied, 0.5, concordant.astype(float))
+    return float(scores.mean())
 
 
 def williams_test(
@@ -292,12 +346,12 @@ def correlate_metric_vs_human(
     lang: str,
     n_boot: int = 1000,
 ) -> dict:
-    """Compute Pearson, Spearman, and Kendall for one metric against human scores,
-    with 95% bootstrap confidence intervals for Spearman r."""
+    """Compute Pearson, Spearman, Kendall, pairwise accuracy, and SPA for one
+    metric against human scores, with 95% bootstrap CIs for Spearman r."""
     if len(human_scores) < 3:
         return {
             "lang": lang, "metric": metric_name, "n": len(human_scores),
-            "pairwise_acc": None,
+            "pairwise_acc": None, "spa": None,
             "pearson_r": None, "pearson_p": None,
             "spearman_r": None, "spearman_p": None, "spearman_ci_lo": None, "spearman_ci_hi": None,
             "kendall_tau": None, "kendall_p": None,
@@ -306,6 +360,7 @@ def correlate_metric_vs_human(
     sr, sp = _spearman(human_scores, metric_scores)
     kr, kp = _kendall(human_scores, metric_scores)
     pa = pairwise_accuracy(human_scores, metric_scores)
+    spa = soft_pairwise_accuracy(human_scores, metric_scores)
     ci_lo, ci_hi = _bootstrap_ci(
         human_scores, metric_scores,
         stat_fn=lambda x, y: stats.spearmanr(x, y).statistic,
@@ -313,7 +368,7 @@ def correlate_metric_vs_human(
     )
     return {
         "lang": lang, "metric": metric_name, "n": len(human_scores),
-        "pairwise_acc": pa,
+        "pairwise_acc": pa, "spa": spa,
         "pearson_r": pr, "pearson_p": pp,
         "spearman_r": sr, "spearman_p": sp, "spearman_ci_lo": ci_lo, "spearman_ci_hi": ci_hi,
         "kendall_tau": kr, "kendall_p": kp,
@@ -356,7 +411,7 @@ def run_correlation_analysis(
 
     result_df = pd.DataFrame(rows, columns=[
         "lang", "resource_tier", "annotation_tier", "language_family", "script_type",
-        "domain", "metric", "n", "pairwise_acc", "pearson_r", "pearson_p",
+        "domain", "metric", "n", "pairwise_acc", "spa", "pearson_r", "pearson_p",
         "spearman_r", "spearman_p", "spearman_ci_lo", "spearman_ci_hi",
         "kendall_tau", "kendall_p",
     ])
@@ -405,7 +460,7 @@ def run_category_correlation(
     return pd.concat(results, ignore_index=True)
 
 
-_SUMMARY_COLS = ["pairwise_acc", "pearson_r", "spearman_r", "kendall_tau"]
+_SUMMARY_COLS = ["pairwise_acc", "spa", "pearson_r", "spearman_r", "kendall_tau"]
 
 
 def summarize_by_tier(correlation_df: pd.DataFrame) -> pd.DataFrame:
@@ -442,3 +497,101 @@ def summarize_by_family(correlation_df: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
         .sort_values(["metric", "language_family"])
     )
+
+
+def kiwi_vs_comet_by_tier(corr_df: pd.DataFrame) -> pd.DataFrame:
+    """Compare COMET-Kiwi (reference-free) vs. COMET (reference-based) by language.
+
+    The key research question: for low-resource languages where references are
+    unreliable, does dropping the reference hurt or help?
+
+    Returns:
+        DataFrame with per-language columns for both metrics plus signed advantage
+        (positive = Kiwi beats COMET). Empty if either metric is absent.
+    """
+    if "comet" not in corr_df["metric"].values or "cometkiwi" not in corr_df["metric"].values:
+        return pd.DataFrame()
+
+    id_cols = ["lang", "resource_tier", "language_family", "script_type"]
+    val_cols = ["spearman_r", "pairwise_acc", "spa", "kendall_tau"]
+    val_cols = [c for c in val_cols if c in corr_df.columns]
+
+    def _extract(metric_name: str, suffix: str) -> pd.DataFrame:
+        sub = corr_df[corr_df["metric"] == metric_name][id_cols + val_cols].copy()
+        return sub.rename(columns={c: f"{c}_{suffix}" for c in val_cols})
+
+    comet_df = _extract("comet", "comet")
+    kiwi_df = _extract("cometkiwi", "kiwi")
+    merged = comet_df.merge(kiwi_df, on=id_cols, how="inner")
+
+    for col in val_cols:
+        merged[f"kiwi_advantage_{col}"] = merged[f"{col}_kiwi"] - merged[f"{col}_comet"]
+
+    return merged.sort_values(["resource_tier", "lang"]).reset_index(drop=True)
+
+
+def analyze_tier_anomaly(
+    scores_df: pd.DataFrame,
+    metric_columns: list[str],
+    resource_tiers: Optional[dict[str, list[str]]] = None,
+    human_column: str = "quality_score",
+) -> pd.DataFrame:
+    """Analyse the medium > high correlation anomaly by decomposing by WMT year.
+
+    For high-resource languages that span multiple WMT years, computes per-year
+    Spearman r and compares variance to medium-resource (typically single-year)
+    languages. If high-resource languages show high cross-year variance, the
+    aggregate correlation is depressed relative to within-year performance.
+
+    Requires a 'year' column in scores_df (present when WMT MQM data is loaded
+    with the year field kept, which wmt_mqm.py now does).
+
+    Returns:
+        DataFrame with columns: lang, resource_tier, metric, year, n,
+        year_spearman_r, aggregate_spearman_r.
+        Empty if 'year' column is absent.
+    """
+    if resource_tiers is None:
+        resource_tiers = RESOURCE_TIERS
+    if "year" not in scores_df.columns:
+        return pd.DataFrame()
+
+    lang_to_tier = {lang: tier for tier, langs in resource_tiers.items() for lang in langs}
+    rows = []
+
+    for lang in scores_df["lang"].unique():
+        lang_df = scores_df[scores_df["lang"] == lang].copy()
+        tier = lang_to_tier.get(str(lang), "unknown")
+
+        for metric in metric_columns:
+            if metric not in lang_df.columns:
+                continue
+
+            valid_all = lang_df[[human_column, metric]].dropna()
+            if len(valid_all) < 10:
+                continue
+            agg_r, _ = _spearman(valid_all[human_column].tolist(), valid_all[metric].tolist())
+
+            year_col = lang_df["year"].dropna()
+            if year_col.nunique() > 1:
+                for yr, yr_group in lang_df.groupby("year"):
+                    yr_valid = yr_group[[human_column, metric]].dropna()
+                    if len(yr_valid) < 10:
+                        continue
+                    yr_r, _ = _spearman(yr_valid[human_column].tolist(), yr_valid[metric].tolist())
+                    rows.append({
+                        "lang": str(lang), "resource_tier": tier, "metric": metric,
+                        "year": str(yr), "n": len(yr_valid),
+                        "year_spearman_r": yr_r, "aggregate_spearman_r": agg_r,
+                    })
+            else:
+                yr_val = str(year_col.iloc[0]) if len(year_col) else "unknown"
+                rows.append({
+                    "lang": str(lang), "resource_tier": tier, "metric": metric,
+                    "year": yr_val, "n": len(valid_all),
+                    "year_spearman_r": agg_r, "aggregate_spearman_r": agg_r,
+                })
+
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).sort_values(["resource_tier", "lang", "metric", "year"])

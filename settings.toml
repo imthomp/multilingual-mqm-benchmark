@@ -1,27 +1,39 @@
 [languages]
 # Resource tier classification drives the main analysis plots.
+# high   = professional WMT MQM annotations
+# medium = WMT Direct Assessment (sentence-level human ratings)
+# low    = WMT DA but genuinely low-resource languages, or synthetic-only
 [languages.resource_tiers]
 high   = ["de", "zh", "ru", "he"]
-medium = ["es", "cs", "tr", "uk"]
+medium = ["es", "cs", "tr", "uk", "fr", "pl", "fi", "et", "is", "lt", "lv",
+          "bn", "hi", "gu", "ta", "ja", "kk", "xh", "zu"]
 low    = ["ha", "km", "ps", "sw", "ht", "lo"]
 
 # Language family groupings (for secondary analysis per Dr. Fulda's suggestion)
 [languages.families]
-indo_european = ["de", "ru", "es", "cs", "uk", "ps"]   # ps = Iranian branch
-afro_asiatic  = ["he", "ha"]                            # he = Semitic, ha = Chadic
+indo_european = ["de", "ru", "es", "cs", "uk", "ps",          # Germanic/Slavic/Romance/Iranian
+                 "fr", "pl", "is", "lt", "lv",                # Romance + Baltic + Nordic
+                 "bn", "hi", "gu"]                             # Indo-Aryan
+afro_asiatic  = ["he", "ha"]                                   # he = Semitic, ha = Chadic
 sino_tibetan  = ["zh"]
-turkic        = ["tr"]
+turkic        = ["tr", "kk"]                                   # Turkish + Kazakh
 austroasiatic = ["km"]
 tai_kadai     = ["lo"]
-niger_congo   = ["sw"]
+niger_congo   = ["sw", "xh", "zu"]                             # Bantu family
 creole        = ["ht"]
+dravidian     = ["ta"]                                         # Tamil (gu/bn/hi are Indo-Aryan, above)
+japonic       = ["ja"]
+uralic        = ["fi", "et"]                                   # Finnish + Estonian
 
 # Script type (logographic vs phonographic — per Dr. Fulda)
 [languages.script_type]
-logographic  = ["zh"]                                        # character = morpheme/word
-alphabetic   = ["de", "ru", "es", "cs", "uk", "tr", "sw", "ha", "ht"]  # true alphabets
-abjad        = ["he", "ps"]                                  # consonant-primary (Hebrew, Arabic)
-abugida      = ["km", "lo"]                                  # Brahmic-derived (Khmer, Lao)
+logographic  = ["zh", "ja"]                                    # character = morpheme/word (incl. kanji)
+alphabetic   = ["de", "ru", "es", "cs", "uk", "tr", "sw", "ha", "ht",
+                "fr", "pl", "is", "lt", "lv", "kk",           # Latin/Cyrillic alphabets
+                "xh", "zu", "fi", "et"]                        # Bantu + Uralic Latin
+abjad        = ["he", "ps"]                                    # consonant-primary (Hebrew, Arabic)
+abugida      = ["km", "lo",                                    # Brahmic-derived (Khmer, Lao)
+                "bn", "hi", "gu", "ta"]                        # Devanagari/Bengali/Gujarati/Tamil
 
 [data]
 # HuggingFace dataset IDs
@@ -37,9 +49,18 @@ nllb_model         = "facebook/nllb-200-distilled-600M"
 wmt_mqm_pairs = ["en-de", "zh-en", "en-ru", "he-en", "en-es"]
 
 # Tier 1b: WMT DA target languages.
-# Available in RicardoRei/wmt-da-human-evaluation (confirmed):
-#   cs, de, et, fi, fr, gu, ha, hi, is, ja, kk, km, lt, lv, pl, ps, ru, ta, tr, uk, xh, zh, zu
-wmt_da_target_langs = ["cs", "tr", "uk", "ha", "km", "ps"]
+# Confirmed available in RicardoRei/wmt-da-human-evaluation:
+#   bn cs de et fi fr gu ha hi is ja kk km lt lv pl ps ru ta tr uk xh zh zu
+# (de, ru, zh already loaded as Tier 1a MQM — do not duplicate here)
+# Original 6: cs tr uk ha km ps
+# Expanded (Apr 2026): added fr pl fi et is lt lv bn hi gu ta ja kk xh zu
+wmt_da_target_langs = [
+  "cs", "tr", "uk",                             # original medium
+  "ha", "km", "ps",                             # original low
+  "fr", "pl", "fi", "et", "is", "lt", "lv",    # European expansion
+  "bn", "hi", "gu", "ta", "ja", "kk",           # South/East Asian expansion
+  "xh", "zu",                                    # African expansion
+]
 
 # Tier 2: languages with no human annotations — FLORES+/NLLB/synthetic only.
 # Distinct from resource_tiers.low, which also includes ha/km/ps (covered by Tier 1b).
@@ -60,7 +81,7 @@ wmt_mqm_span_dir = "../wmt-mqm-human-evaluation"
 # submitting (HF_HUB_OFFLINE=1 on compute nodes breaks download_model at runtime).
 # Future work: run `from comet import download_model; download_model("Unbabel/XCOMET-XL")`
 # and `download_model("Unbabel/wmt22-cometkiwi-da")` on login node, then re-add here.
-run = ["bleu", "chrf", "bertscore", "comet"]
+run = ["bleu", "chrf", "bertscore", "comet", "cometkiwi"]
 
 # GEMBA as an evaluated metric (same local model, HF pipeline).
 # Also used as the LLM for Tier 2 synthetic MQM annotation generation.

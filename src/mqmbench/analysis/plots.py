@@ -85,6 +85,132 @@ def plot_metric_category_heatmap(category_corr_df: pd.DataFrame, out_path):
     plt.close()
 
 
+def plot_kiwi_vs_comet_by_tier(kiwi_df: pd.DataFrame, out_path):
+    """Scatter comparing COMET-Kiwi (reference-free) vs. COMET (reference-based).
+
+    One point per language. Points above the diagonal mean Kiwi beats COMET.
+    Languages are coloured by resource tier so we can see whether low-resource
+    pairs benefit from dropping the (potentially noisy) reference.
+    """
+    if kiwi_df.empty or "spearman_r_comet" not in kiwi_df.columns:
+        return
+
+    tier_colors = {"high": "#2166ac", "medium": "#4dac26", "low": "#d01c8b"}
+    tier_order = ["high", "medium", "low"]
+
+    measure_pairs = [
+        ("spearman_r_comet", "spearman_r_kiwi", "Spearman r"),
+        ("spa_comet", "spa_kiwi", "Soft Pairwise Accuracy (SPA)"),
+    ]
+    measure_pairs = [(c, k, t) for c, k, t in measure_pairs if c in kiwi_df.columns and k in kiwi_df.columns]
+    if not measure_pairs:
+        return
+
+    n_plots = len(measure_pairs)
+    fig, axes = plt.subplots(1, n_plots, figsize=(6.5 * n_plots, 5.5))
+    if n_plots == 1:
+        axes = [axes]
+
+    for ax, (comet_col, kiwi_col, title) in zip(axes, measure_pairs):
+        for tier in tier_order:
+            sub = kiwi_df[kiwi_df["resource_tier"] == tier]
+            if sub.empty:
+                continue
+            ax.scatter(sub[comet_col], sub[kiwi_col], label=tier.capitalize(),
+                       color=tier_colors[tier], s=70, alpha=0.88, zorder=3)
+            # Label each point with the language code
+            for _, row in sub.iterrows():
+                ax.annotate(row["lang"].upper(), (row[comet_col], row[kiwi_col]),
+                            fontsize=7, ha="center", va="bottom", color=tier_colors[tier])
+
+        all_vals = pd.concat([kiwi_df[comet_col], kiwi_df[kiwi_col]]).dropna()
+        if all_vals.empty:
+            continue
+        lo, hi = all_vals.min() - 0.03, all_vals.max() + 0.03
+        ax.plot([lo, hi], [lo, hi], "k--", linewidth=0.8, alpha=0.5, label="Equal performance")
+        ax.set_xlim(lo, hi)
+        ax.set_ylim(lo, hi)
+        ax.set_xlabel(f"COMET (reference-based) — {title}")
+        ax.set_ylabel(f"COMET-Kiwi (reference-free) — {title}")
+        ax.set_title(f"Kiwi vs. COMET\n{title}")
+        ax.legend(title="Resource tier", frameon=False, fontsize=9)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    plt.suptitle("Reference-free vs. Reference-based: Does Reference Quality Matter?",
+                 fontsize=12, y=1.01)
+    plt.tight_layout()
+    plt.savefig(out_path, bbox_inches="tight")
+    plt.close()
+
+
+def plot_tier_anomaly(anomaly_df: pd.DataFrame, out_path):
+    """Two-panel figure showing why medium-resource languages beat high-resource ones.
+
+    Left: per-year COMET Spearman r for each high-resource language (shows that
+    individual-year correlations are strong, but aggregating across years depresses them).
+    Right: cross-year variance vs. mean correlation, coloured by tier.
+    """
+    if anomaly_df.empty or "year" not in anomaly_df.columns:
+        return
+
+    comet_df = anomaly_df[anomaly_df["metric"] == "comet"].copy()
+    multi_year = comet_df[comet_df["year"] != "unknown"].copy()
+    if multi_year.empty:
+        return
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+    # --- Left panel: per-year lines for high-resource languages ---
+    ax = axes[0]
+    high_df = multi_year[multi_year["resource_tier"] == "high"]
+    if not high_df.empty:
+        for lang in sorted(high_df["lang"].unique()):
+            sub = high_df[high_df["lang"] == lang].sort_values("year")
+            if sub["year"].nunique() < 2:
+                continue
+            ax.plot(sub["year"].astype(str), sub["year_spearman_r"],
+                    marker="o", label=lang.upper(), linewidth=1.8)
+        ax.set_title("COMET Spearman r by WMT Year\n(high-resource languages only)")
+        ax.set_xlabel("WMT Year")
+        ax.set_ylabel("COMET Spearman r")
+        ax.legend(frameon=False, fontsize=9)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    # --- Right panel: variance vs. mean, coloured by tier ---
+    ax = axes[1]
+    tier_colors = {"high": "#2166ac", "medium": "#4dac26", "low": "#d01c8b"}
+    var_df = (
+        multi_year.groupby(["lang", "resource_tier"])["year_spearman_r"]
+        .agg(mean_r="mean", std_r="std")
+        .reset_index()
+        .dropna(subset=["std_r"])
+    )
+    for tier in ["high", "medium", "low"]:
+        sub = var_df[var_df["resource_tier"] == tier]
+        if sub.empty:
+            continue
+        ax.scatter(sub["mean_r"], sub["std_r"], label=f"{tier.capitalize()} resource",
+                   color=tier_colors[tier], s=70, alpha=0.88)
+        for _, row in sub.iterrows():
+            ax.annotate(row["lang"].upper(), (row["mean_r"], row["std_r"]),
+                        fontsize=7, ha="center", va="bottom", color=tier_colors[tier])
+    ax.set_xlabel("Mean per-year COMET Spearman r")
+    ax.set_ylabel("Std dev of per-year Spearman r (heterogeneity)")
+    ax.set_title("Cross-year Variance Explains Medium > High Anomaly\n"
+                 "(higher std = aggregate correlation is depressed)")
+    ax.legend(frameon=False, fontsize=9)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    plt.suptitle("Why Do Medium-resource Languages Outperform High-resource Ones?",
+                 fontsize=12, y=1.01)
+    plt.tight_layout()
+    plt.savefig(out_path, bbox_inches="tight")
+    plt.close()
+
+
 def plot_nontranslation_detection(scores_df: pd.DataFrame, out_path):
     """Bar chart of severe-error detection recall per metric (Tier 1a MQM only)."""
     mqm_df = scores_df[scores_df["annotation_tier"] == AnnotationTier.HUMAN_MQM].copy()

@@ -1,6 +1,7 @@
 # Data and results (too large / possibly sensitive)
-data/
-results/
+# Use /data/ and /results/ to anchor to repo root only — prevents matching src/mqmbench/data/
+/data/
+/results/
 
 # Python
 __pycache__/

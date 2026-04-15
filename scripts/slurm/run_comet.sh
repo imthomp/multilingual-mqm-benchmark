@@ -3,14 +3,14 @@
 #SBATCH --job-name=mqmbench_comet
 #SBATCH --partition=dw
 #SBATCH --qos=matrix
-#SBATCH --time=08:00:00
+#SBATCH --time=12:00:00
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --mem=128G
 #SBATCH --gres=gpu:1
 #SBATCH --requeue
 #SBATCH --signal=SIGHUP@90
-#SBATCH --output=mqmbench_comet_%j.out
+#SBATCH --output=logs/mqmbench_comet_%j.out
 
 export OMP_NUM_THREADS=$SLURM_CPUS_ON_NODE
 export HF_HUB_OFFLINE=1

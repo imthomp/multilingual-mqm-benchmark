@@ -209,17 +209,134 @@ def plot_pipeline_diagram():
         ax.annotate("", xy=(x, 1.55), xytext=(x, 1.3),
                     arrowprops=dict(arrowstyle="->", color="#555", lw=1.5))
 
-    ax.text(5.0, 0.9, "BLEU · ChrF · BERTScore · COMET",
+    ax.text(5.0, 0.9, "BLEU · ChrF · BERTScore · COMET · COMET-Kiwi",
             ha="center", va="center", fontsize=13,
             bbox=dict(boxstyle="round,pad=0.4", facecolor="#f0f0f0", edgecolor="#888"))
-    ax.text(5.0, 0.35, "Spearman / Kendall / Pairwise Accuracy  ·  Bootstrap 95% CIs  ·  Williams test",
+    ax.text(5.0, 0.35, "Spearman / Kendall / SPA  ·  Bootstrap 95% CIs  ·  Williams test",
             ha="center", va="center", fontsize=10.5, color="#555555")
 
-    ax.set_title("Three-Tier Annotation Design — 13 Languages, 9 Families, 4 Script Types",
+    ax.set_title("Three-Tier Annotation Design — 28 Languages, 11 Families, 4 Script Types",
                  fontsize=14, pad=8)
 
     plt.tight_layout()
     path = OUT / "presentation_pipeline.png"
+    plt.savefig(path, bbox_inches="tight")
+    plt.close()
+    print(f"Saved {path}")
+
+
+# ---------------------------------------------------------------------------
+# Figure 4: COMET-Kiwi vs. COMET scatter by resource tier
+# ---------------------------------------------------------------------------
+def plot_kiwi_comparison(df: pd.DataFrame):
+    """Scatter: COMET-Kiwi Spearman r (y) vs. COMET Spearman r (x), per language."""
+    if "comet" not in df["metric"].unique() or "cometkiwi" not in df["metric"].unique():
+        print("Skipping Figure 4: cometkiwi not in correlations.csv")
+        return
+
+    comet_df = df[df["metric"] == "comet"][["lang", "resource_tier", "spearman_r", "spa"]].rename(
+        columns={"spearman_r": "comet_r", "spa": "comet_spa"})
+    kiwi_df = df[df["metric"] == "cometkiwi"][["lang", "spearman_r", "spa"]].rename(
+        columns={"spearman_r": "kiwi_r", "spa": "kiwi_spa"})
+    merged = comet_df.merge(kiwi_df, on="lang").dropna(subset=["comet_r", "kiwi_r"])
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
+
+    for ax, (cx, ky, xlabel, ylabel, title) in zip(axes, [
+        ("comet_r", "kiwi_r",   "COMET (ref-based) Spearman r",   "COMET-Kiwi (ref-free) Spearman r",   "Spearman r"),
+        ("comet_spa", "kiwi_spa", "COMET (ref-based) SPA",          "COMET-Kiwi (ref-free) SPA",          "Soft Pairwise Accuracy"),
+    ]):
+        if cx not in merged.columns or ky not in merged.columns:
+            continue
+        for tier in TIER_ORDER:
+            sub = merged[merged["resource_tier"] == tier]
+            if sub.empty:
+                continue
+            ax.scatter(sub[cx], sub[ky], label=tier.capitalize(),
+                       color=TIER_COLORS[tier], s=65, alpha=0.88, zorder=3)
+            for _, row in sub.iterrows():
+                ax.annotate(row["lang"].upper(), (row[cx], row[ky]),
+                            fontsize=7, ha="center", va="bottom",
+                            color=TIER_COLORS[tier])
+
+        all_v = pd.concat([merged[cx], merged[ky]]).dropna()
+        lo, hi = all_v.min() - 0.03, all_v.max() + 0.03
+        ax.plot([lo, hi], [lo, hi], "k--", lw=0.8, alpha=0.5, label="Equal performance")
+        ax.set_xlim(lo, hi); ax.set_ylim(lo, hi)
+        ax.set_xlabel(xlabel, fontsize=13)
+        ax.set_ylabel(ylabel, fontsize=13)
+        ax.set_title(f"Reference-free vs. Reference-based\n{title}", fontsize=14)
+        ax.legend(title="Resource tier", frameon=False, fontsize=10)
+
+    plt.suptitle("COMET-Kiwi vs. COMET: Does Dropping the Reference Help Low-resource Pairs?",
+                 fontsize=13, y=1.01)
+    plt.tight_layout()
+    path = OUT / "presentation_kiwi_vs_comet.png"
+    plt.savefig(path, bbox_inches="tight")
+    plt.close()
+    print(f"Saved {path}")
+
+
+# ---------------------------------------------------------------------------
+# Figure 5: Medium > High anomaly — per-year variance decomposition
+# ---------------------------------------------------------------------------
+def plot_anomaly(df: pd.DataFrame):
+    """Load tier_anomaly.csv and produce the variance-decomposition figure."""
+    path = RESULTS / "tier_anomaly.csv"
+    if not path.exists():
+        print("Skipping Figure 5: tier_anomaly.csv not found (run pipeline first)")
+        return
+
+    anomaly_df = pd.read_csv(path)
+    comet_df = anomaly_df[anomaly_df["metric"] == "comet"].copy()
+    multi = comet_df[comet_df["year"] != "unknown"]
+    if multi.empty:
+        print("Skipping Figure 5: no multi-year data in tier_anomaly.csv")
+        return
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+    # Left: per-year Spearman r lines for high-resource languages
+    ax = axes[0]
+    for lang in sorted(multi[multi["resource_tier"] == "high"]["lang"].unique()):
+        sub = multi[(multi["lang"] == lang) & (multi["resource_tier"] == "high")].sort_values("year")
+        if sub["year"].nunique() < 2:
+            continue
+        ax.plot(sub["year"].astype(str), sub["year_spearman_r"],
+                marker="o", label=lang.upper(), linewidth=2)
+    ax.set_title("Per-year COMET Spearman r\n(high-resource languages)", fontsize=14)
+    ax.set_xlabel("WMT Year")
+    ax.set_ylabel("COMET Spearman r")
+    ax.legend(frameon=False, fontsize=10)
+
+    # Right: mean vs. std scatter coloured by tier
+    ax = axes[1]
+    var_df = (
+        multi.groupby(["lang", "resource_tier"])["year_spearman_r"]
+        .agg(mean_r="mean", std_r="std")
+        .reset_index()
+        .dropna(subset=["std_r"])
+    )
+    for tier in TIER_ORDER:
+        sub = var_df[var_df["resource_tier"] == tier]
+        if sub.empty:
+            continue
+        ax.scatter(sub["mean_r"], sub["std_r"], label=tier.capitalize(),
+                   color=TIER_COLORS[tier], s=65, alpha=0.88)
+        for _, row in sub.iterrows():
+            ax.annotate(row["lang"].upper(), (row["mean_r"], row["std_r"]),
+                        fontsize=7, ha="center", va="bottom",
+                        color=TIER_COLORS[tier])
+    ax.set_xlabel("Mean per-year COMET Spearman r", fontsize=13)
+    ax.set_ylabel("Std dev across WMT years (heterogeneity)", fontsize=13)
+    ax.set_title("Cross-year Variance Explains the Anomaly\n"
+                 "(high std = aggregate correlation is depressed)", fontsize=14)
+    ax.legend(frameon=False, fontsize=10)
+
+    plt.suptitle("Why Medium-resource Languages Outperform High-resource Ones",
+                 fontsize=13, y=1.01)
+    plt.tight_layout()
+    path = OUT / "presentation_tier_anomaly.png"
     plt.savefig(path, bbox_inches="tight")
     plt.close()
     print(f"Saved {path}")
@@ -230,4 +347,6 @@ if __name__ == "__main__":
     df = load_corr()
     plot_tier_bar(df)
     plot_language_heatmap(df)
+    plot_kiwi_comparison(df)
+    plot_anomaly(df)          # reads tier_anomaly.csv separately
     print("Done. Files in results/plots/")

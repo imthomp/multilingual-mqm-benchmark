@@ -16,6 +16,8 @@ import pandas as pd
 
 from mqmbench.analysis.correlation import (
     analyze_metric_disagreements,
+    analyze_tier_anomaly,
+    kiwi_vs_comet_by_tier,
     run_correlation_analysis,
     run_williams_tests,
     summarize_by_family,
@@ -26,8 +28,10 @@ from mqmbench.analysis.plots import (
     plot_correlation_by_language_family,
     plot_correlation_by_resource_level,
     plot_correlation_by_script_type,
+    plot_kiwi_vs_comet_by_tier,
     plot_metric_category_heatmap,
     plot_nontranslation_detection,
+    plot_tier_anomaly,
 )
 from mqmbench.config import init_settings, settings
 from mqmbench.constants import AnnotationTier
@@ -160,6 +164,21 @@ def run_pipeline(settings_file: Optional[str] = None) -> dict:
     )
     logger.info(f"  Disagreement analysis: {len(disagreement_df)} rows")
 
+    logger.info("=== COMET-Kiwi vs. COMET Comparison ===")
+    kiwi_df = kiwi_vs_comet_by_tier(corr_df)
+    if not kiwi_df.empty:
+        logger.info(f"  Kiwi vs. COMET: {len(kiwi_df)} languages compared")
+    else:
+        logger.info("  Skipped (cometkiwi not in results — add to metrics.run)")
+
+    logger.info("=== Medium > High Anomaly Analysis ===")
+    anomaly_df = analyze_tier_anomaly(full_scores_df, metric_columns,
+                                      resource_tiers=resource_tiers)
+    if not anomaly_df.empty:
+        logger.info(f"  Anomaly analysis: {len(anomaly_df)} lang×metric×year rows")
+    else:
+        logger.info("  Skipped (no 'year' column in scores — check wmt_mqm loader)")
+
     corr_df.to_csv(output_dir / "correlations.csv", index=False)
     tier_summary.to_csv(output_dir / "tier_summary.csv", index=False)
     script_summary.to_csv(output_dir / "script_type_summary.csv", index=False)
@@ -170,6 +189,10 @@ def run_pipeline(settings_file: Optional[str] = None) -> dict:
         williams_df.to_csv(output_dir / "williams_tests.csv", index=False)
     if not disagreement_df.empty:
         disagreement_df.to_csv(output_dir / "metric_disagreements.csv", index=False)
+    if not kiwi_df.empty:
+        kiwi_df.to_csv(output_dir / "kiwi_vs_comet.csv", index=False)
+    if not anomaly_df.empty:
+        anomaly_df.to_csv(output_dir / "tier_anomaly.csv", index=False)
 
     logger.info("=== Generating Plots ===")
     plot_correlation_by_resource_level(corr_df, plots_dir / "correlation_by_tier.png")
@@ -178,6 +201,10 @@ def run_pipeline(settings_file: Optional[str] = None) -> dict:
     if not cat_corr_df.empty:
         plot_metric_category_heatmap(cat_corr_df, plots_dir / "category_heatmap.png")
     plot_nontranslation_detection(full_scores_df, plots_dir / "nontranslation_detection.png")
+    if not kiwi_df.empty:
+        plot_kiwi_vs_comet_by_tier(kiwi_df, plots_dir / "kiwi_vs_comet.png")
+    if not anomaly_df.empty:
+        plot_tier_anomaly(anomaly_df, plots_dir / "tier_anomaly.png")
 
     logger.info(f"Pipeline complete. Results saved to {output_dir}/")
     return {
@@ -188,6 +215,8 @@ def run_pipeline(settings_file: Optional[str] = None) -> dict:
         "category_correlations": cat_corr_df,
         "williams_tests": williams_df,
         "metric_disagreements": disagreement_df,
+        "kiwi_vs_comet": kiwi_df,
+        "tier_anomaly": anomaly_df,
     }
 
 

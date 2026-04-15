@@ -1,5 +1,77 @@
 # Research Log — Multilingual MQM Benchmark
 
+## 2026-04-15 (Session 6 — Publishability upgrades)
+
+### What we did
+
+**Language expansion (13 → 28 languages, all zero new data collection):**
+- Added 15 languages to `wmt_da_target_langs` in settings.toml: fr, pl, fi, et, is, lt, lv, bn, hi, gu, ta, ja, kk, xh, zu
+- All come from `RicardoRei/wmt-da-human-evaluation` (already loaded), so no additional download needed
+- Updated `resource_tiers.medium` to include all new DA languages
+- Added 3 new language families: dravidian (ta), japonic (ja), uralic (fi, et)
+- Expanded `LANGUAGE_FAMILIES`, `SCRIPT_TYPES`, `RESOURCE_TIERS` in both settings.toml and correlation.py
+- New script type assignments: ja → logographic; bn/hi/gu/ta → abugida; rest → alphabetic
+
+**Soft Pairwise Accuracy (SPA) — WMT 2024 primary measure:**
+- Implemented `soft_pairwise_accuracy()` in correlation.py
+- Difference from existing pairwise_accuracy: metric-tied pairs contribute 0.5 instead of being excluded; only human-tied pairs are excluded
+- `correlate_metric_vs_human()` now returns both `pairwise_acc` and `spa`
+- Added `"spa"` to `_SUMMARY_COLS`, result DataFrame columns, and all summary tables
+
+**COMET-Kiwi enabled and compared:**
+- Added `"cometkiwi"` to `metrics.run` in settings.toml (was blocked by HF offline; weights now pre-downloaded)
+- Added `kiwi_vs_comet_by_tier()` in correlation.py: compares reference-free Kiwi vs. reference-based COMET per language across spearman_r, pairwise_acc, spa
+- Output: `results/kiwi_vs_comet.csv`
+- Added `plot_kiwi_vs_comet_by_tier()` in plots.py: scatter with equal-performance diagonal, points labelled by language, coloured by tier
+- Key research question: do low-resource pairs (where references may be noisy) benefit from dropping the reference?
+
+**Accuracy vs. fluency category correlation — activated:**
+- `wmt_mqm_span_dir = "../wmt-mqm-human-evaluation"` was already set; TSVs confirmed present
+- No code changes needed; pipeline already checks this path and runs `run_category_correlation()` if found
+- Output: `results/category_correlations.csv` + `results/plots/category_heatmap.png`
+
+**Medium > High anomaly controlled analysis:**
+- Added `year` and `system` to keep list in `load_wmt_mqm()` so scores_df carries WMT year
+- Added `analyze_tier_anomaly()` in correlation.py: groups by (lang, year) for MQM data, computes per-year Spearman r, compares cross-year variance between high/medium tiers
+- Hypothesis: high-resource languages span WMT 2020–2024 with shifting domains and system populations → high cross-year variance → depressed aggregate correlation
+- Output: `results/tier_anomaly.csv`
+- Added `plot_tier_anomaly()`: left panel = per-year lines for high-resource langs; right panel = mean vs. std scatter showing which tier has more heterogeneity
+- Also added `plot_kiwi_comparison()` and `plot_anomaly()` to `scripts/make_presentation_plots.py`
+
+**Pipeline/plot updates:**
+- `pipeline.py` now imports and calls kiwi_vs_comet_by_tier, analyze_tier_anomaly; saves to new CSVs; generates kiwi_vs_comet.png and tier_anomaly.png
+- `make_presentation_plots.py`: updated pipeline diagram (28 languages, 11 families; SPA in measures list); added Figure 4 (Kiwi vs COMET) and Figure 5 (anomaly)
+- SLURM time limit bumped to 12h (more languages + cometkiwi); output redirected to logs/
+
+**SLURM job submitted:**
+- Job **11505606** on `dw-2-4` (matrix/dw partition, 1 GPU, 128G)
+- Expected: BLEU + ChrF + BERTScore + COMET + COMET-Kiwi across 28 languages (~10h)
+- Output: `logs/mqmbench_comet_11505606.out`
+
+### New outputs when job completes
+- `results/correlations.csv` — expanded to 28 languages × 5 metrics; now includes `spa` column
+- `results/kiwi_vs_comet.csv` — Kiwi vs. COMET comparison per language
+- `results/tier_anomaly.csv` — per-year Spearman r for multi-year languages
+- `results/category_correlations.csv` — accuracy vs. fluency breakdown (MQM tier only)
+- `results/plots/kiwi_vs_comet.png`
+- `results/plots/tier_anomaly.png`
+- `results/plots/presentation_kiwi_vs_comet.png`
+- `results/plots/presentation_tier_anomaly.png`
+
+### Publishability status (updated)
+- Language coverage: **28 languages**, 11 families, 4 script types — no published study spans this breadth
+- Metrics: BLEU, ChrF, BERTScore, COMET, COMET-Kiwi (SPA now primary measure, matching WMT 2024)
+- Category correlation pending (code+data ready; activates on this pipeline run)
+- Kiwi vs. COMET by resource tier is the key new analytical table for paper strengthening
+- Tier anomaly analysis provides the controlled explanation reviewers will ask for
+- Next gap: MetricX-23 / BLEURT-20 (requires separate installs); human validation of Tier 2 for 2–3 langs
+
+### Questions for advisor
+- Is the SPA formula (tied metric = 0.5) exactly what Thompson et al. 2024 use, or does it include additional tie-calibration steps?
+- For the kiwi vs. COMET result: if Kiwi wins on low-resource but loses on high-resource, is the practical recommendation "use Kiwi when references are from a single translator"?
+
+
+
 ## 2026-04-12 (Session 5, 9AM–5PM+)
 
 ### What we did
