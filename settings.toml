@@ -82,7 +82,7 @@ wmt_mqm_span_dir = "../wmt-mqm-human-evaluation"
 # Metrics to run. Comment out any you want to skip.
 # xcomet and cometkiwi are pre-cached (run download_model() on login node before submitting).
 # XCOMET-XL requires gated HuggingFace access: https://huggingface.co/Unbabel/XCOMET-XL
-run = ["bleu", "chrf", "bertscore", "comet", "xcomet", "cometkiwi"]
+run = ["bleu", "chrf", "bertscore", "comet", "xcomet", "xcometxxl", "cometkiwi", "cometkiwi23"]
 
 # GEMBA as an evaluated metric (same local model, HF pipeline).
 # Also used as the LLM for Tier 2 synthetic MQM annotation generation.
@@ -110,6 +110,16 @@ gpus       = 1
 [metrics.cometkiwi]
 model      = "Unbabel/wmt22-cometkiwi-da"
 batch_size = 16
+gpus       = 1
+
+[metrics.cometkiwi23]
+model      = "Unbabel/wmt23-cometkiwi-da-xl"
+batch_size = 8
+gpus       = 1
+
+[metrics.xcometxxl]
+model      = "Unbabel/XCOMET-XXL"
+batch_size = 4
 gpus       = 1
 
 [slurm_job]

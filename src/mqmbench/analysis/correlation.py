@@ -502,16 +502,20 @@ def summarize_by_family(correlation_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def kiwi_vs_comet_by_tier(corr_df: pd.DataFrame) -> pd.DataFrame:
-    """Compare COMET-Kiwi (reference-free) vs. COMET (reference-based) by language.
+    """Compare COMET-Kiwi variants (reference-free) vs. COMET (reference-based) by language.
 
+    Compares all available kiwi variants (cometkiwi, cometkiwi23) against COMET.
     The key research question: for low-resource languages where references are
-    unreliable, does dropping the reference hurt or help?
+    unreliable, does dropping the reference hurt or help? Does the 2023 Kiwi
+    close the gap with reference-based COMET?
 
     Returns:
-        DataFrame with per-language columns for both metrics plus signed advantage
-        (positive = Kiwi beats COMET). Empty if either metric is absent.
+        DataFrame with per-language columns for COMET + all Kiwi variants plus
+        signed advantages. Empty if COMET is absent.
     """
-    if "comet" not in corr_df["metric"].values or "cometkiwi" not in corr_df["metric"].values:
+    available_metrics = set(corr_df["metric"].unique())
+    kiwi_variants = [m for m in ["cometkiwi", "cometkiwi23"] if m in available_metrics]
+    if "comet" not in available_metrics or not kiwi_variants:
         return pd.DataFrame()
 
     id_cols = ["lang", "resource_tier", "language_family", "script_type"]
@@ -522,14 +526,15 @@ def kiwi_vs_comet_by_tier(corr_df: pd.DataFrame) -> pd.DataFrame:
         sub = corr_df[corr_df["metric"] == metric_name][id_cols + val_cols].copy()
         return sub.rename(columns={c: f"{c}_{suffix}" for c in val_cols})
 
-    comet_df = _extract("comet", "comet")
-    kiwi_df = _extract("cometkiwi", "kiwi")
-    merged = comet_df.merge(kiwi_df, on=id_cols, how="inner")
+    result = _extract("comet", "comet")
+    for variant in kiwi_variants:
+        suffix = "kiwi22" if variant == "cometkiwi" else "kiwi23"
+        kiwi_df = _extract(variant, suffix)
+        result = result.merge(kiwi_df, on=id_cols, how="left")
+        for col in val_cols:
+            result[f"{suffix}_advantage_{col}"] = result[f"{col}_{suffix}"] - result[f"{col}_comet"]
 
-    for col in val_cols:
-        merged[f"kiwi_advantage_{col}"] = merged[f"{col}_kiwi"] - merged[f"{col}_comet"]
-
-    return merged.sort_values(["resource_tier", "lang"]).reset_index(drop=True)
+    return result.sort_values(["resource_tier", "lang"]).reset_index(drop=True)
 
 
 def analyze_tier_anomaly(

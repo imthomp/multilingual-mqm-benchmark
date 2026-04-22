@@ -337,8 +337,21 @@ def _run_metrics(scores_df: pd.DataFrame, cfg, checkpoint_dir: Path | None = Non
         added_columns.append("xcomet")
         _checkpoint("xcomet")
 
+    if "xcometxxl" in metrics_to_run:
+        logger.info("Computing xCOMET-XXL...")
+        from mqmbench.metrics import comet
+        sources, hyps, refs = _text_lists(scores_df)
+        scores_df["xcometxxl"] = comet.score_xcomet(
+            sources, hyps, refs,
+            model_name=cfg.metrics.xcometxxl.model,
+            batch_size=cfg.metrics.xcometxxl.batch_size,
+            gpus=cfg.metrics.xcometxxl.gpus,
+        )
+        added_columns.append("xcometxxl")
+        _checkpoint("xcometxxl")
+
     if "cometkiwi" in metrics_to_run:
-        logger.info("Computing COMET-Kiwi (reference-free)...")
+        logger.info("Computing COMET-Kiwi 2022 (reference-free)...")
         from mqmbench.metrics import comet
         sources, hyps, _ = _text_lists(scores_df)
         scores_df["cometkiwi"] = comet.score_kiwi(
@@ -349,6 +362,19 @@ def _run_metrics(scores_df: pd.DataFrame, cfg, checkpoint_dir: Path | None = Non
         )
         added_columns.append("cometkiwi")
         _checkpoint("cometkiwi")
+
+    if "cometkiwi23" in metrics_to_run:
+        logger.info("Computing COMET-Kiwi 2023 XL (reference-free)...")
+        from mqmbench.metrics import comet
+        sources, hyps, _ = _text_lists(scores_df)
+        scores_df["cometkiwi23"] = comet.score_kiwi(
+            sources, hyps,
+            model_name=cfg.metrics.cometkiwi23.model,
+            batch_size=cfg.metrics.cometkiwi23.batch_size,
+            gpus=cfg.metrics.cometkiwi23.gpus,
+        )
+        added_columns.append("cometkiwi23")
+        _checkpoint("cometkiwi23")
 
     if getattr(cfg.metrics, "run_gemba", False):
         logger.info("Computing GEMBA-MQM...")

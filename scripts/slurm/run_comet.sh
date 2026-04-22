@@ -3,7 +3,7 @@
 #SBATCH --job-name=mqmbench_comet
 #SBATCH --partition=dw
 #SBATCH --qos=matrix
-#SBATCH --time=16:00:00
+#SBATCH --time=20:00:00
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --mem=128G
