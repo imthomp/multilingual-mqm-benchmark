@@ -7,33 +7,36 @@
 high   = ["de", "zh", "ru", "he"]
 medium = ["es", "cs", "tr", "uk", "fr", "pl", "fi", "et", "is", "lt", "lv",
           "bn", "hi", "gu", "ta", "ja", "kk", "xh", "zu"]
-low    = ["ha", "km", "ps", "sw", "ht", "lo"]
+low    = ["ha", "km", "ps", "sw", "ht", "lo", "th", "my", "am", "ka"]
 
 # Language family groupings (for secondary analysis per Dr. Fulda's suggestion)
 [languages.families]
 indo_european = ["de", "ru", "es", "cs", "uk", "ps",          # Germanic/Slavic/Romance/Iranian
                  "fr", "pl", "is", "lt", "lv",                # Romance + Baltic + Nordic
                  "bn", "hi", "gu"]                             # Indo-Aryan
-afro_asiatic  = ["he", "ha"]                                   # he = Semitic, ha = Chadic
-sino_tibetan  = ["zh"]
+afro_asiatic  = ["he", "ha", "am"]                             # Semitic (he, am) + Chadic (ha)
+sino_tibetan  = ["zh", "my"]                                   # Sinitic + Tibeto-Burman (Burmese)
 turkic        = ["tr", "kk"]                                   # Turkish + Kazakh
 austroasiatic = ["km"]
-tai_kadai     = ["lo"]
+tai_kadai     = ["lo", "th"]                                   # Lao + Thai
 niger_congo   = ["sw", "xh", "zu"]                             # Bantu family
 creole        = ["ht"]
 dravidian     = ["ta"]                                         # Tamil (gu/bn/hi are Indo-Aryan, above)
 japonic       = ["ja"]
 uralic        = ["fi", "et"]                                   # Finnish + Estonian
+kartvelian    = ["ka"]                                         # Georgian
 
 # Script type (logographic vs phonographic — per Dr. Fulda)
 [languages.script_type]
 logographic  = ["zh", "ja"]                                    # character = morpheme/word (incl. kanji)
 alphabetic   = ["de", "ru", "es", "cs", "uk", "tr", "sw", "ha", "ht",
                 "fr", "pl", "is", "lt", "lv", "kk",           # Latin/Cyrillic alphabets
-                "xh", "zu", "fi", "et"]                        # Bantu + Uralic Latin
+                "xh", "zu", "fi", "et",                        # Bantu + Uralic Latin
+                "ka"]                                          # Georgian (unique alphabet)
 abjad        = ["he", "ps"]                                    # consonant-primary (Hebrew, Arabic)
 abugida      = ["km", "lo",                                    # Brahmic-derived (Khmer, Lao)
-                "bn", "hi", "gu", "ta"]                        # Devanagari/Bengali/Gujarati/Tamil
+                "bn", "hi", "gu", "ta",                        # Devanagari/Bengali/Gujarati/Tamil
+                "th", "my", "am"]                              # Thai, Myanmar, Ge'ez scripts
 
 [data]
 # HuggingFace dataset IDs
@@ -64,7 +67,7 @@ wmt_da_target_langs = [
 
 # Tier 2: languages with no human annotations — FLORES+/NLLB/synthetic only.
 # Distinct from resource_tiers.low, which also includes ha/km/ps (covered by Tier 1b).
-tier2_langs = ["sw", "ht", "lo"]
+tier2_langs = ["sw", "ht", "lo", "th", "my", "am", "ka"]
 
 cache_dir  = "data/cache"
 results_dir = "results"
@@ -77,11 +80,9 @@ wmt_mqm_span_dir = "../wmt-mqm-human-evaluation"
 
 [metrics]
 # Metrics to run. Comment out any you want to skip.
-# xcomet and cometkiwi require pre-caching via COMET library on login node before
-# submitting (HF_HUB_OFFLINE=1 on compute nodes breaks download_model at runtime).
-# Future work: run `from comet import download_model; download_model("Unbabel/XCOMET-XL")`
-# and `download_model("Unbabel/wmt22-cometkiwi-da")` on login node, then re-add here.
-run = ["bleu", "chrf", "bertscore", "comet", "cometkiwi"]
+# xcomet and cometkiwi are pre-cached (run download_model() on login node before submitting).
+# XCOMET-XL requires gated HuggingFace access: https://huggingface.co/Unbabel/XCOMET-XL
+run = ["bleu", "chrf", "bertscore", "comet", "xcomet", "cometkiwi"]
 
 # GEMBA as an evaluated metric (same local model, HF pipeline).
 # Also used as the LLM for Tier 2 synthetic MQM annotation generation.

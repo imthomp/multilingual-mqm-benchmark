@@ -12,6 +12,10 @@ ISO_TO_BCP47: dict[str, str] = {
     "sw": "swh_Latn",   # Swahili
     "ht": "hat_Latn",   # Haitian Creole
     "lo": "lao_Laoo",   # Lao
+    "th": "tha_Thai",   # Thai
+    "my": "mya_Mymr",   # Burmese
+    "am": "amh_Ethi",   # Amharic
+    "ka": "kat_Geor",   # Georgian
     # Tier 1b — WMT DA medium/low
     "es": "spa_Latn",   # Spanish
     "cs": "ces_Latn",   # Czech

@@ -21,7 +21,7 @@ RESOURCE_TIERS = {
     "high":   ["de", "zh", "ru", "he"],
     "medium": ["es", "cs", "tr", "uk", "fr", "pl", "fi", "et", "is", "lt", "lv",
                "bn", "hi", "gu", "ta", "ja", "kk", "xh", "zu"],
-    "low":    ["ha", "km", "ps", "sw", "ht", "lo"],
+    "low":    ["ha", "km", "ps", "sw", "ht", "lo", "th", "my", "am", "ka"],
 }
 
 # Language family groupings for secondary analysis
@@ -29,26 +29,28 @@ LANGUAGE_FAMILIES = {
     "indo_european": ["de", "ru", "es", "cs", "uk", "ps",   # Germanic/Slavic/Romance/Iranian
                       "fr", "pl", "is", "lt", "lv",          # Romance/Baltic/Nordic
                       "bn", "hi", "gu"],                      # Indo-Aryan
-    "afro_asiatic":  ["he", "ha"],       # he = Semitic, ha = Chadic
-    "sino_tibetan":  ["zh"],
-    "turkic":        ["tr", "kk"],       # Turkish + Kazakh
+    "afro_asiatic":  ["he", "ha", "am"],  # Semitic (he, am) + Chadic (ha)
+    "sino_tibetan":  ["zh", "my"],        # Sinitic + Tibeto-Burman (Burmese)
+    "turkic":        ["tr", "kk"],        # Turkish + Kazakh
     "austroasiatic": ["km"],
-    "tai_kadai":     ["lo"],
+    "tai_kadai":     ["lo", "th"],        # Lao + Thai
     "niger_congo":   ["sw", "xh", "zu"],  # Bantu family
     "creole":        ["ht"],
     "dravidian":     ["ta"],
     "japonic":       ["ja"],
     "uralic":        ["fi", "et"],
+    "kartvelian":    ["ka"],              # Georgian
 }
 
 # Script type per Dr. Fulda's suggestion: logographic vs. phonographic
 SCRIPT_TYPES = {
-    "logographic": ["zh", "ja"],                             # character = morpheme/word; ja = kanji+kana
+    "logographic": ["zh", "ja"],                              # character = morpheme/word; ja = kanji+kana
     "alphabetic":  ["de", "ru", "es", "cs", "uk", "tr", "sw", "ha", "ht",
                     "fr", "pl", "is", "lt", "lv", "kk",
-                    "xh", "zu", "fi", "et"],                 # Latin/Cyrillic
-    "abjad":       ["he", "ps"],                             # consonant-primary (Hebrew, Arabic)
-    "abugida":     ["km", "lo", "bn", "hi", "gu", "ta"],    # Brahmic-derived
+                    "xh", "zu", "fi", "et", "ka"],            # Latin/Cyrillic + Georgian
+    "abjad":       ["he", "ps"],                              # consonant-primary (Hebrew, Arabic)
+    "abugida":     ["km", "lo", "bn", "hi", "gu", "ta",
+                    "th", "my", "am"],                        # Brahmic-derived + Thai/Myanmar/Ge'ez
 }
 
 ACCURACY_ERRORS = {"mistranslation", "omission", "addition", "untranslated"}

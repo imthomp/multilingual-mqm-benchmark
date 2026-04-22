@@ -3,7 +3,7 @@
 #SBATCH --job-name=mqmbench_comet
 #SBATCH --partition=dw
 #SBATCH --qos=matrix
-#SBATCH --time=12:00:00
+#SBATCH --time=16:00:00
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --mem=128G
@@ -14,6 +14,7 @@
 
 export OMP_NUM_THREADS=$SLURM_CPUS_ON_NODE
 export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
 
 cd "$SLURM_SUBMIT_DIR"
 

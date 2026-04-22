@@ -223,16 +223,64 @@ def run_pipeline(settings_file: Optional[str] = None) -> dict:
 def _run_metrics(scores_df: pd.DataFrame, cfg, checkpoint_dir: Path | None = None) -> list[str]:
     """Run each configured metric and add score columns to scores_df in place.
 
-    If checkpoint_dir is provided, saves scores_df to a checkpoint CSV after
-    each metric completes so partial results survive a job timeout.
+    If checkpoint_dir is provided:
+    - Saves a checkpoint CSV after each metric completes.
+    - On startup, reads any existing checkpoint and merges already-computed
+      columns back into scores_df so those metrics are skipped this run.
+      This lets a failed job resume from where it left off.
     """
     metrics_to_run = list(cfg.metrics.run)
     added_columns = []
 
+    # Resume from checkpoint: merge any previously computed metric columns.
+    # Uses segment_id merge so new rows (e.g. added Tier 2 languages) get NaN
+    # for pre-computed metrics; those metrics are then recomputed from scratch.
+    if checkpoint_dir is not None:
+        ckpt_path = checkpoint_dir / "scores_checkpoint.csv"
+        if ckpt_path.exists():
+            try:
+                ckpt = pd.read_csv(ckpt_path)
+                ckpt_metric_cols = [c for c in ckpt.columns
+                                    if c in metrics_to_run and c not in scores_df.columns]
+                if ckpt_metric_cols:
+                    if "segment_id" in ckpt.columns and "segment_id" in scores_df.columns:
+                        merged = scores_df[["segment_id"]].merge(
+                            ckpt[["segment_id"] + ckpt_metric_cols],
+                            on="segment_id", how="left",
+                        )
+                        for col in ckpt_metric_cols:
+                            scores_df[col] = merged[col].values
+                    elif len(ckpt) == len(scores_df):
+                        scores_df[ckpt_metric_cols] = ckpt[ckpt_metric_cols].values
+                    else:
+                        logger.warning(
+                            f"Checkpoint row count ({len(ckpt)}) differs from current data "
+                            f"({len(scores_df)}) and no segment_id — recomputing all metrics"
+                        )
+                        ckpt_metric_cols = []
+
+                    # Only skip metrics where every segment has a valid score
+                    skipped, recomputing = [], []
+                    for col in ckpt_metric_cols:
+                        if scores_df[col].notna().all():
+                            skipped.append(col)
+                            added_columns.append(col)
+                        else:
+                            missing_n = int(scores_df[col].isna().sum())
+                            recomputing.append(f"{col}({missing_n} missing)")
+                            del scores_df[col]
+                    if skipped:
+                        logger.info(f"Resuming from checkpoint — skipping: {skipped}")
+                    if recomputing:
+                        logger.info(f"Checkpoint incomplete for: {recomputing} — will recompute")
+            except Exception as exc:
+                logger.warning(f"Could not load checkpoint ({exc}) — recomputing all metrics")
+
     def _checkpoint(name: str) -> None:
         if checkpoint_dir is not None:
             path = checkpoint_dir / "scores_checkpoint.csv"
-            scores_df[["lang", "annotation_tier"] + added_columns].to_csv(path, index=False)
+            id_cols = [c for c in ("segment_id", "lang", "annotation_tier") if c in scores_df.columns]
+            scores_df[id_cols + added_columns].to_csv(path, index=False)
             logger.info(f"Checkpoint saved after {name}: {path}")
 
     if "bleu" in metrics_to_run:
