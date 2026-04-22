@@ -1,5 +1,59 @@
 # Research Log — Multilingual MQM Benchmark
 
+## 2026-04-21 (Session 7 — Tier 2 expansion, xCOMET, checkpoint fix)
+
+### What we did
+
+**Tier 2 language expansion (+4 languages → now 32 total):**
+- Added Thai (`th`), Burmese (`my`), Amharic (`am`), Georgian (`ka`) to `tier2_langs` in settings.toml
+- All four supported by FLORES+/NLLB-200 with confirmed BCP-47 codes: `tha_Thai`, `mya_Mymr`, `amh_Ethi`, `kat_Geor`
+- Added to `resource_tiers.low` and updated language family/script type maps in both settings.toml and correlation.py:
+  - tai_kadai now includes `th` (same family as `lo`)
+  - sino_tibetan now includes `my` (Tibeto-Burman branch)
+  - afro_asiatic now includes `am` (Semitic, alongside `he`)
+  - New family: `kartvelian = ["ka"]` — Georgian is its own unique family
+  - Script assignments: th/my/am → abugida; ka → alphabetic (Georgian unique alphabet)
+- BCP-47 entries added to `data/utils.py` ISO_TO_BCP47 dict
+
+**He-en (WMT23) and en-es (WMT24) span TSVs — activated automatically:**
+- Confirmed TSVs exist: `generalMT2023/heen/mqm_generalMT2023_heen.tsv` and `generalMT2024/mqm_generalMT2024_enes.tsv`
+- `_LANG_FROM_FILENAME` in `wmt_mqm.py` already maps `heen → he` and `enes → es`
+- These files load automatically since `wmt_mqm_span_dir` points to the right place — no code change needed
+- Adds Hebrew and Spanish span-level category data to accuracy vs. fluency analysis (previously only de/zh)
+
+**xCOMET-XL enabled:**
+- Added `"xcomet"` to `metrics.run` in settings.toml (was commented out pending access)
+- Obtained gated access to `Unbabel/XCOMET-XL` — pre-downloaded via `snapshot_download()`
+- xCOMET is a larger reference-based COMET that uses xCOMET's multi-head scoring architecture
+
+**Checkpoint fix — segment_id based merge:**
+- Bug: checkpoint resume used positional assignment (`scores_df[cols] = ckpt[cols].values`) which breaks when new Tier 2 languages change the row count
+- Fix: `_run_metrics()` now merges checkpoint by `segment_id` (left join); metrics with any NaN rows (new languages) are dropped from the skip list and recomputed
+- `_checkpoint()` now saves `segment_id` alongside `lang` and `annotation_tier` for future partial resumes
+- Old checkpoint (without segment_id) deleted before resubmission
+
+**SLURM job 11552831 submitted:**
+- Time limit bumped to 16h (COMET + xCOMET-XL + COMET-Kiwi across 32 languages)
+- Replaces cancelled job 11552619 (had 12h limit with old settings)
+- Will compute all 6 metrics from scratch (old checkpoint deleted due to no segment_id)
+
+**MetricX-23 and BLEURT-20 — blocked:**
+- MetricX-23: Google's pip-installable package (`metricx`) was a name squatter; GitHub repo has no setup.py; direct HuggingFace approach risky without confirmed input format
+- BLEURT-20: requires TensorFlow (not installed, not practical to add)
+- Decision: xCOMET-XL covers the "strong neural metric" gap; MetricX left for future work
+
+### Publishability status (updated)
+- **32 languages**, 12 families, 4 script types — broader than any published MT metric meta-eval
+- **Metrics**: BLEU, ChrF, BERTScore, COMET, xCOMET-XL, COMET-Kiwi (6 metrics, covers reference-based + reference-free + multi-head categories)
+- **Category correlation**: now includes Hebrew and Spanish spans (previously only de/zh)
+- **Job 11552831 pending** — awaiting GPU allocation
+
+### Questions for advisor
+- Georgian and Amharic: both abugidas but from completely different script origins (Ge'ez vs. Brahmic). Worth noting in script type section that "abugida" is a structural property, not a genetic one?
+- xCOMET vs. COMET on medium-resource: expect xCOMET to win, but will the gap be larger for morphologically complex languages?
+
+---
+
 ## 2026-04-15 (Session 6 — Publishability upgrades)
 
 ### What we did
