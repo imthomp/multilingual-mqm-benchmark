@@ -84,7 +84,7 @@ wmt_mqm_span_dir = "../wmt-mqm-human-evaluation"
 # XCOMET-XL requires gated HuggingFace access: https://huggingface.co/Unbabel/XCOMET-XL
 # xcometxxl (42.9 GB checkpoint) exceeds 128 GB RAM headroom when loaded with other models.
 # xcomet (13.9 GB) is the main xCOMET contribution; XXL adds marginal benefit.
-run = ["bleu", "chrf", "bertscore", "comet", "xcomet", "cometkiwi", "cometkiwi23"]
+run = ["bleu", "chrf", "bleurt", "bertscore", "comet", "xcomet", "cometkiwi", "cometkiwi23"]
 
 # GEMBA as an evaluated metric (same local model, HF pipeline).
 # Also used as the LLM for Tier 2 synthetic MQM annotation generation.
@@ -94,6 +94,10 @@ run = ["bleu", "chrf", "bertscore", "comet", "xcomet", "cometkiwi", "cometkiwi23
 #               "Qwen/Qwen2.5-14B-Instruct" (strong multilingual, especially CJK)
 run_gemba   = true
 gemba_model = "meta-llama/Llama-3.1-8B-Instruct"
+
+[metrics.bleurt]
+model      = "Elron/bleurt-large-512"
+batch_size = 32
 
 [metrics.bertscore]
 model      = "microsoft/mdeberta-v3-base"

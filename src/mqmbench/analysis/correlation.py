@@ -56,6 +56,28 @@ SCRIPT_TYPES = {
 ACCURACY_ERRORS = {"mistranslation", "omission", "addition", "untranslated"}
 FLUENCY_ERRORS = {"grammar", "spelling", "punctuation", "register", "style"}
 
+# Morphological type classification (structural property, independent of script/family).
+# isolating   = minimal inflection, meaning via word order (zh, th, lo, vi)
+# agglutinative = transparent suffixes/prefixes stack predictably (tr, fi, et, ka, kk, sw,
+#                 km, my, am, ja, ta — ja is agglutinative in its verbal morphology)
+# fusional     = inflection fuses multiple features per morpheme (de, ru, es, cs, fr, pl,
+#                uk, is, lt, lv, he, ps, bn, hi, gu, xh, zu, ha, ht)
+MORPHOLOGY_TYPES = {
+    "isolating":    ["zh", "th", "lo"],
+    "agglutinative": ["tr", "fi", "et", "ka", "kk", "sw", "km", "my", "am", "ja", "ta"],
+    "fusional":     ["de", "ru", "es", "cs", "fr", "pl", "uk", "is", "lt", "lv",
+                     "he", "ps", "bn", "hi", "gu", "xh", "zu", "ha", "ht"],
+}
+
+# WMT language pair direction: X→en vs en→X.
+# Matters because COMET/BERTScore were trained predominantly on en→X data.
+TRANSLATION_DIRECTIONS = {
+    "x_to_en": ["zh", "he"],    # zh-en, he-en
+    "en_to_x": ["de", "ru", "es", "cs", "tr", "uk", "fr", "pl", "fi", "et", "is",
+                "lt", "lv", "bn", "hi", "gu", "ta", "ja", "kk", "xh", "zu",
+                "ha", "km", "ps", "sw", "ht", "lo", "th", "my", "am", "ka"],
+}
+
 
 def _pearson(x: list[float], y: list[float]) -> tuple[float, float]:
     r, p = stats.pearsonr(x, y)
@@ -798,3 +820,191 @@ def reference_quality_effect(
     if not rows:
         return pd.DataFrame()
     return pd.DataFrame(rows).sort_values(["kiwi_variant", "annotation_tier", "lang"]).reset_index(drop=True)
+
+
+def run_direction_analysis(
+    scores_df: pd.DataFrame,
+    metric_columns: list[str],
+    human_column: str = "quality_score",
+    resource_tiers: Optional[dict[str, list[str]]] = None,
+) -> pd.DataFrame:
+    """Correlation analysis split by translation direction (X→en vs. en→X).
+
+    Metrics like COMET and BERTScore were trained predominantly on en→X data.
+    If they are less calibrated for X→en, we expect lower Spearman r for
+    zh-en and he-en compared to en→X languages of similar resource level.
+
+    Returns:
+        DataFrame like run_correlation_analysis() with a 'direction' column.
+    """
+    if resource_tiers is None:
+        resource_tiers = RESOURCE_TIERS
+
+    lang_to_tier = {lang: tier for tier, langs in resource_tiers.items() for lang in langs}
+    lang_to_family = {lang: fam for fam, langs in LANGUAGE_FAMILIES.items() for lang in langs}
+    lang_to_script = {lang: stype for stype, langs in SCRIPT_TYPES.items() for lang in langs}
+    lang_to_dir = {lang: d for d, langs in TRANSLATION_DIRECTIONS.items() for lang in langs}
+
+    rows = []
+    for lang, group in scores_df.groupby("lang"):
+        human = group[human_column].tolist()
+        direction = lang_to_dir.get(str(lang), "en_to_x")
+        for metric in metric_columns:
+            if metric not in group.columns or group[metric].isna().all():
+                continue
+            result = correlate_metric_vs_human(human, group[metric].tolist(), metric, str(lang))
+            result["resource_tier"] = lang_to_tier.get(str(lang), "unknown")
+            result["language_family"] = lang_to_family.get(str(lang), "unknown")
+            result["script_type"] = lang_to_script.get(str(lang), "unknown")
+            result["direction"] = direction
+            rows.append(result)
+
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).sort_values(["direction", "metric", "lang"]).reset_index(drop=True)
+
+
+def run_morphology_analysis(
+    corr_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Aggregate per-language correlations by morphological type.
+
+    Tests whether metrics are more reliable for isolating languages (zh, th, lo —
+    minimal inflection, overlap-based metrics benefit from predictable tokens) vs.
+    agglutinative (tr, fi, ka — many suffixes → BLEU/ChrF hurt more) vs.
+    fusional (de, ru — irregular inflection).
+
+    Args:
+        corr_df: Output of run_correlation_analysis(), must have a 'lang' column.
+
+    Returns:
+        Aggregated DataFrame with a 'morphology_type' column.
+    """
+    lang_to_morph = {lang: mtype for mtype, langs in MORPHOLOGY_TYPES.items() for lang in langs}
+    df = corr_df.copy()
+    df["morphology_type"] = df["lang"].map(lang_to_morph).fillna("fusional")
+    cols = [c for c in _SUMMARY_COLS if c in df.columns]
+    return (
+        df.groupby(["metric", "morphology_type"])[cols]
+        .mean()
+        .reset_index()
+        .sort_values(["metric", "morphology_type"])
+    )
+
+
+def run_length_analysis(
+    scores_df: pd.DataFrame,
+    metric_columns: list[str],
+    human_column: str = "quality_score",
+    resource_tiers: Optional[dict[str, list[str]]] = None,
+    bins: tuple[int, int] = (10, 30),
+) -> pd.DataFrame:
+    """Correlation analysis stratified by source sentence length.
+
+    Neural metrics rely on semantic context; for very short sentences (< 10 tokens)
+    there is less signal. Hypothesis: COMET reliability drops more on short segments
+    than surface metrics like BLEU (which suffers equally at all lengths).
+
+    Args:
+        bins: Token count boundaries (short < bins[0], long > bins[1]).
+
+    Returns:
+        DataFrame like run_correlation_analysis() with a 'length_bin' column.
+    """
+    if "source" not in scores_df.columns:
+        return pd.DataFrame()
+    if resource_tiers is None:
+        resource_tiers = RESOURCE_TIERS
+
+    lang_to_tier = {lang: tier for tier, langs in resource_tiers.items() for lang in langs}
+
+    df = scores_df.copy()
+    df["_src_len"] = df["source"].fillna("").str.split().str.len()
+
+    def _bin(n):
+        if n < bins[0]:
+            return f"short (<{bins[0]})"
+        elif n <= bins[1]:
+            return f"medium ({bins[0]}–{bins[1]})"
+        return f"long (>{bins[1]})"
+
+    df["length_bin"] = df["_src_len"].apply(_bin)
+
+    rows = []
+    for (lang, length_bin), group in df.groupby(["lang", "length_bin"]):
+        if len(group) < 20:
+            continue
+        human = group[human_column].tolist()
+        for metric in metric_columns:
+            if metric not in group.columns or group[metric].isna().all():
+                continue
+            result = correlate_metric_vs_human(human, group[metric].tolist(), metric, str(lang))
+            result["resource_tier"] = lang_to_tier.get(str(lang), "unknown")
+            result["length_bin"] = length_bin
+            rows.append(result)
+
+    if not rows:
+        return pd.DataFrame()
+    bin_order = [f"short (<{bins[0]})", f"medium ({bins[0]}–{bins[1]})", f"long (>{bins[1]})"]
+    result_df = pd.DataFrame(rows)
+    result_df["length_bin"] = pd.Categorical(result_df["length_bin"], categories=bin_order, ordered=True)
+    return result_df.sort_values(["length_bin", "metric", "lang"]).reset_index(drop=True)
+
+
+def run_rater_agreement_analysis(
+    span_df: pd.DataFrame,
+    scores_df: pd.DataFrame,
+    metric_columns: list[str],
+    human_column: str = "quality_score",
+) -> pd.DataFrame:
+    """Correlate inter-rater agreement with metric-human correlation.
+
+    For segments where professional MQM raters agree (all flag an error, or all
+    flag no error), the human quality signal is cleaner, and metrics should
+    correlate better. Segments with low agreement are ambiguous cases where even
+    human judges disagree — not a fair test for any metric.
+
+    Uses span_df (raw Google TSV data with a 'rater' column) to compute per-segment
+    rater agreement, then bins segments into high/low agreement and computes
+    per-bin metric-human Spearman r.
+
+    Returns:
+        DataFrame with 'agreement_bin' (high/low) column, or empty if rater
+        data is unavailable.
+    """
+    if span_df.empty or "rater" not in span_df.columns or "segment_id" not in span_df.columns:
+        return pd.DataFrame()
+    if "segment_id" not in scores_df.columns:
+        return pd.DataFrame()
+
+    # Compute per-segment error fraction (fraction of raters who flagged any error)
+    has_error = span_df["severity"].isin(["major", "minor", "critical"])
+    rater_counts = span_df.groupby("segment_id")["rater"].nunique()
+    error_counts = span_df[has_error].groupby("segment_id")["rater"].nunique()
+    error_frac = (error_counts / rater_counts).fillna(0).rename("error_frac")
+
+    # Agreement: 0 or 1 = all raters agree; 0.4–0.6 = maximum disagreement
+    seg_agreement = error_frac.apply(lambda f: "high" if f <= 0.2 or f >= 0.8 else "low")
+    seg_agreement.name = "agreement_bin"
+
+    df = scores_df.merge(seg_agreement.reset_index(), on="segment_id", how="left")
+    df["agreement_bin"] = df["agreement_bin"].fillna("high")  # single-rater segs default to high
+
+    rows = []
+    for (lang, agreement_bin), group in df.groupby(["lang", "agreement_bin"]):
+        if len(group) < 20 or group[human_column].isna().all():
+            continue
+        human = group[human_column].tolist()
+        for metric in metric_columns:
+            if metric not in group.columns or group[metric].isna().all():
+                continue
+            sr, _ = _spearman(human, group[metric].fillna(0).tolist())
+            rows.append({
+                "lang": str(lang), "metric": metric,
+                "agreement_bin": agreement_bin,
+                "spearman_r": sr, "n": len(group),
+            })
+
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).sort_values(["agreement_bin", "metric", "lang"]).reset_index(drop=True)

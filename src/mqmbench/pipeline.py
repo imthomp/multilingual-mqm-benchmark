@@ -21,7 +21,11 @@ from mqmbench.analysis.correlation import (
     kiwi_vs_comet_by_tier,
     reference_quality_effect,
     run_correlation_analysis,
+    run_direction_analysis,
     run_domain_analysis,
+    run_length_analysis,
+    run_morphology_analysis,
+    run_rater_agreement_analysis,
     run_system_level_analysis,
     run_williams_tests,
     summarize_by_family,
@@ -32,11 +36,15 @@ from mqmbench.analysis.plots import (
     plot_correlation_by_language_family,
     plot_correlation_by_resource_level,
     plot_correlation_by_script_type,
+    plot_direction_analysis,
     plot_domain_analysis,
     plot_kiwi_vs_comet_by_tier,
+    plot_length_analysis,
     plot_metric_category_heatmap,
     plot_metric_correlation_matrix,
+    plot_morphology_analysis,
     plot_nontranslation_detection,
+    plot_rater_agreement_analysis,
     plot_reference_quality_effect,
     plot_score_distributions,
     plot_system_vs_segment_correlation,
@@ -218,6 +226,46 @@ def run_pipeline(settings_file: Optional[str] = None) -> dict:
     else:
         logger.info("  Skipped (missing COMET or Kiwi columns)")
 
+    logger.info("=== Translation Direction Analysis ===")
+    direction_df = run_direction_analysis(full_scores_df, metric_columns,
+                                          resource_tiers=resource_tiers)
+    if not direction_df.empty:
+        logger.info(f"  Direction analysis: {len(direction_df)} rows")
+
+    logger.info("=== Morphological Type Analysis ===")
+    morph_df = run_morphology_analysis(corr_df)
+    if not morph_df.empty:
+        logger.info(f"  Morphology analysis: {len(morph_df)} rows")
+
+    logger.info("=== Sentence Length Analysis ===")
+    length_df = run_length_analysis(full_scores_df, metric_columns,
+                                    resource_tiers=resource_tiers)
+    if not length_df.empty:
+        logger.info(f"  Length analysis: {len(length_df)} rows")
+    else:
+        logger.info("  Skipped (no 'source' column in scores)")
+
+    logger.info("=== Inter-rater Agreement Analysis ===")
+    agreement_df = pd.DataFrame()
+    if not cat_corr_df.empty:
+        span_dir = Path(getattr(settings.data, "wmt_mqm_span_dir", ""))
+        if span_dir and span_dir.exists():
+            try:
+                from mqmbench.data.wmt_mqm import load_wmt_mqm_spans
+                span_df_raw = load_wmt_mqm_spans(span_dir,
+                                                  lang_pairs=list(settings.data.wmt_mqm_pairs))
+                if not span_df_raw.empty:
+                    metric_cols_avail = [c for c in metric_columns if c in full_scores_df.columns]
+                    seg_lookup = (full_scores_df[["segment_id", "quality_score"] + metric_cols_avail]
+                                  .drop_duplicates("segment_id"))
+                    span_with_metrics = span_df_raw.merge(seg_lookup, on="segment_id", how="left")
+                    agreement_df = run_rater_agreement_analysis(
+                        span_with_metrics, full_scores_df, metric_columns)
+                    if not agreement_df.empty:
+                        logger.info(f"  Rater agreement: {len(agreement_df)} (lang×bin×metric) rows")
+            except Exception as exc:
+                logger.warning(f"  Rater agreement analysis skipped: {exc}")
+
     corr_df.to_csv(output_dir / "correlations.csv", index=False)
     tier_summary.to_csv(output_dir / "tier_summary.csv", index=False)
     script_summary.to_csv(output_dir / "script_type_summary.csv", index=False)
@@ -240,6 +288,14 @@ def run_pipeline(settings_file: Optional[str] = None) -> dict:
         metric_corr_matrix.to_csv(output_dir / "metric_correlation_matrix.csv")
     if not ref_quality_df.empty:
         ref_quality_df.to_csv(output_dir / "reference_quality_effect.csv", index=False)
+    if not direction_df.empty:
+        direction_df.to_csv(output_dir / "direction_analysis.csv", index=False)
+    if not morph_df.empty:
+        morph_df.to_csv(output_dir / "morphology_analysis.csv", index=False)
+    if not length_df.empty:
+        length_df.to_csv(output_dir / "length_analysis.csv", index=False)
+    if not agreement_df.empty:
+        agreement_df.to_csv(output_dir / "rater_agreement_analysis.csv", index=False)
 
     logger.info("=== Generating Plots ===")
     plot_correlation_by_resource_level(corr_df, plots_dir / "correlation_by_tier.png")
@@ -266,6 +322,14 @@ def run_pipeline(settings_file: Optional[str] = None) -> dict:
     if not ref_quality_df.empty:
         plot_reference_quality_effect(ref_quality_df,
                                       plots_dir / "reference_quality_effect.png")
+    if not direction_df.empty:
+        plot_direction_analysis(direction_df, plots_dir / "direction_analysis.png")
+    if not morph_df.empty:
+        plot_morphology_analysis(morph_df, plots_dir / "morphology_analysis.png")
+    if not length_df.empty:
+        plot_length_analysis(length_df, plots_dir / "length_analysis.png")
+    if not agreement_df.empty:
+        plot_rater_agreement_analysis(agreement_df, plots_dir / "rater_agreement.png")
 
     logger.info(f"Pipeline complete. Results saved to {output_dir}/")
     return {
@@ -414,6 +478,18 @@ def _run_metrics(scores_df: pd.DataFrame, cfg, checkpoint_dir: Path | None = Non
         )
         added_columns.append("xcometxxl")
         _checkpoint("xcometxxl")
+
+    if "bleurt" in metrics_to_run:
+        logger.info("Computing BLEURT...")
+        from mqmbench.metrics import bleurt as bleurt_metric
+        sources, hyps, refs = _text_lists(scores_df)
+        scores_df["bleurt"] = bleurt_metric.score(
+            hyps, refs,
+            model_name=cfg.metrics.bleurt.model,
+            batch_size=cfg.metrics.bleurt.batch_size,
+        )
+        added_columns.append("bleurt")
+        _checkpoint("bleurt")
 
     if "cometkiwi" in metrics_to_run:
         logger.info("Computing COMET-Kiwi 2022 (reference-free)...")

@@ -499,3 +499,122 @@ def plot_nontranslation_detection(scores_df: pd.DataFrame, out_path):
     plt.tight_layout()
     plt.savefig(out_path)
     plt.close()
+
+
+def plot_direction_analysis(direction_df: pd.DataFrame, out_path):
+    """Bar chart comparing metric reliability by translation direction (X→en vs. en→X).
+
+    Shows whether COMET/BERTScore's training bias toward en→X data affects
+    reliability when evaluating translations into English.
+    """
+    if direction_df.empty or "direction" not in direction_df.columns:
+        return
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
+    for ax, col, title in zip(axes,
+                               ["spearman_r", "spa"],
+                               ["Spearman ρ", "SPA"]):
+        if col not in direction_df.columns:
+            continue
+        dir_order = sorted(direction_df["direction"].unique())
+        sns.barplot(data=direction_df, x="metric", y=col, hue="direction",
+                    hue_order=dir_order, errorbar="sd", palette="Set1",
+                    ax=ax, alpha=0.82)
+        sns.stripplot(data=direction_df, x="metric", y=col, hue="direction",
+                      hue_order=dir_order, palette="Set1", ax=ax,
+                      dodge=True, size=4, alpha=0.5, legend=False)
+        ax.axhline(0, color="black", linewidth=0.6, linestyle="--", alpha=0.35)
+        ax.set_title(f"{title} by Translation Direction\n(bars = mean ± 1 SD; points = languages)")
+        ax.set_ylabel(title)
+        ax.set_xlabel("Metric")
+        ax.tick_params(axis="x", rotation=25)
+        handles, labels = ax.get_legend_handles_labels()
+        ax.legend(handles[:len(dir_order)], labels[:len(dir_order)],
+                  title="Direction", frameon=False)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+    plt.suptitle("Does Translation Direction Affect Metric Reliability?\n"
+                 "(x_to_en = e.g. zh-en, he-en; en_to_x = most other pairs)",
+                 fontsize=12, y=1.01)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close()
+
+
+def plot_morphology_analysis(morph_df: pd.DataFrame, out_path):
+    """Heatmap of Spearman ρ by morphological type and metric.
+
+    Tests whether metrics that rely on n-gram overlap (BLEU/ChrF) are more
+    harmed by agglutinative morphology than neural metrics.
+    """
+    if morph_df.empty or "morphology_type" not in morph_df.columns:
+        return
+    pivot = morph_df.pivot_table(index="morphology_type", columns="metric",
+                                  values="spearman_r", aggfunc="mean")
+    fig, ax = plt.subplots(figsize=(max(8, len(pivot.columns) * 1.4),
+                                    max(4, len(pivot) * 1.0)))
+    sns.heatmap(pivot, annot=True, fmt=".2f", cmap="coolwarm", center=0,
+                linewidths=0.5, ax=ax)
+    ax.set_title("Mean Spearman ρ by Morphological Type and Metric\n"
+                 "(agglutinative langs: tr/fi/et/ka/ta/ja; isolating: zh/th/lo; fusional: de/ru/es/...)")
+    ax.set_xlabel("Metric")
+    ax.set_ylabel("Morphological Type")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+
+
+def plot_length_analysis(length_df: pd.DataFrame, out_path):
+    """Line plot of Spearman ρ by sentence length bin.
+
+    Shows whether neural metrics degrade more than surface metrics on short segments
+    (less context = less semantic signal for COMET/BERTScore).
+    """
+    if length_df.empty or "length_bin" not in length_df.columns:
+        return
+    metrics = sorted(length_df["metric"].unique())
+    palette = sns.color_palette("tab10", len(metrics))
+    metric_mean = length_df.groupby(["metric", "length_bin"])["spearman_r"].mean().reset_index()
+
+    fig, ax = plt.subplots(figsize=(9, 5.5))
+    for metric, color in zip(metrics, palette):
+        sub = metric_mean[metric_mean["metric"] == metric].sort_values("length_bin")
+        ax.plot(sub["length_bin"].astype(str), sub["spearman_r"],
+                marker="o", label=metric, color=color, linewidth=1.8)
+    ax.axhline(0, color="black", linewidth=0.6, linestyle="--", alpha=0.35)
+    ax.set_title("Spearman ρ by Source Sentence Length\n"
+                 "(averaged over all languages; short = <10 tokens, long = >30 tokens)")
+    ax.set_ylabel("Mean Spearman ρ")
+    ax.set_xlabel("Length Bin")
+    ax.legend(frameon=False, fontsize=9, ncol=2)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+
+
+def plot_rater_agreement_analysis(agreement_df: pd.DataFrame, out_path):
+    """Bar chart comparing metric reliability for high- vs. low-rater-agreement segments.
+
+    High agreement = all raters flagged error or all flagged clean.
+    Low agreement = mixed signals. Metrics should correlate better with clean signal.
+    """
+    if agreement_df.empty or "agreement_bin" not in agreement_df.columns:
+        return
+    fig, ax = plt.subplots(figsize=(max(9, agreement_df["metric"].nunique() * 1.4), 5.5))
+    bin_order = ["high", "low"]
+    bin_order = [b for b in bin_order if b in agreement_df["agreement_bin"].values]
+    sns.barplot(data=agreement_df, x="metric", y="spearman_r", hue="agreement_bin",
+                hue_order=bin_order, errorbar="sd", palette=["#2166ac", "#d01c8b"],
+                ax=ax, alpha=0.82)
+    ax.axhline(0, color="black", linewidth=0.6, linestyle="--", alpha=0.35)
+    ax.set_title("Metric Reliability by Inter-rater Agreement\n"
+                 "(high = raters agree; low = raters disagree; Tier 1a MQM only)")
+    ax.set_ylabel("Spearman ρ")
+    ax.set_xlabel("Metric")
+    ax.legend(title="Rater agreement", frameon=False)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
