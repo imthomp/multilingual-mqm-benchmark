@@ -442,13 +442,20 @@ def _run_metrics(scores_df: pd.DataFrame, cfg, checkpoint_dir: Path | None = Non
         _checkpoint("cometkiwi23")
 
     if getattr(cfg.metrics, "run_gemba", False):
-        logger.info("Computing GEMBA-MQM...")
+        # GEMBA is an LLM inference metric — running it on 700k+ segments with a
+        # local Llama model would take 30–100 hours. Restrict to MQM tier only
+        # (~85k segments), which is also where it makes most analytical sense
+        # (professional human judgments vs. LLM-as-judge comparison).
+        gemba_df = scores_df[scores_df["annotation_tier"] == "human_mqm"].copy()
+        logger.info(f"Computing GEMBA-MQM on MQM tier only ({len(gemba_df)} segments)...")
         from mqmbench.metrics import gemba
-        sources, hyps, refs = _text_lists(scores_df)
-        raw_penalties = gemba.score(sources, hyps, refs,
+        g_src, g_hyp, g_ref = _text_lists(gemba_df)
+        raw_penalties = gemba.score(g_src, g_hyp, g_ref,
                                     model_name=cfg.metrics.gemba_model)
-        scores_df["gemba"] = [1.0 / (1.0 + p) for p in raw_penalties]
+        scores_df["gemba"] = float("nan")
+        scores_df.loc[gemba_df.index, "gemba"] = [1.0 / (1.0 + p) for p in raw_penalties]
         added_columns.append("gemba")
+        _checkpoint("gemba")
 
     # Ensemble: average of available neural metrics (no GPU cost)
     neural = [c for c in ["comet", "xcomet", "cometkiwi", "cometkiwi23"]
