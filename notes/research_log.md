@@ -1,5 +1,59 @@
 # Research Log — Multilingual MQM Benchmark
 
+## 2026-05-08 (Session 8 continued — five new analyses added)
+
+### What we added
+
+**System-level correlation** (`run_system_level_analysis`):
+- Aggregates per-(lang, system) mean scores, then correlates system rankings with human quality
+- Standard WMT Metrics Shared Task primary measure; expected by every reviewer
+- System-level Spearman r is typically 0.8–0.95 vs. segment-level 0.2–0.5
+- The gap itself is a finding: metrics rank systems well but score individual translations poorly
+- Requires `system` column — present in MQM data; DA data may be skipped gracefully
+- Output: `results/system_level_correlations.csv`, `plots/system_vs_segment.png`
+
+**Inter-metric correlation matrix** (`compute_metric_correlations`):
+- Pairwise Spearman r between all 9 metrics (pooled across all segments)
+- High values = redundant; low = complementary signal
+- Justifies metric selection and motivates the ensemble
+- Output: `results/metric_correlation_matrix.csv`, `plots/metric_correlation_matrix.png`
+
+**Score distribution plot** (`plot_score_distributions`):
+- Violin plot of raw metric scores split by resource tier
+- Narrow violin = metric collapses scores for that tier (low variance = low discrimination)
+- Expected finding: BLEU/ChrF should show narrower distributions for low-resource
+- Output: `plots/score_distributions.png`
+
+**Reference quality effect** (`reference_quality_effect`):
+- Computes Kiwi advantage (Kiwi Spearman r − COMET Spearman r) per (lang, annotation_tier)
+- Tests: does Kiwi gain more over COMET when references are crowd-sourced (DA) vs. professional (MQM)?
+- If yes, supports the hypothesis that reference quality drives the Kiwi-vs-COMET story
+- Output: `results/reference_quality_effect.csv`, `plots/reference_quality_effect.png`
+
+**Ensemble meta-metric** (computed in `_run_metrics`):
+- Average of all available neural metrics: comet, xcomet, xcometxxl, cometkiwi, cometkiwi23
+- Computed post-GPU with zero extra cost; often outperforms any individual metric
+- Included in all downstream analyses as metric `"ensemble"`
+
+### Job 11787100 (replaces 11784597, 20h)
+- Will resume from checkpoint: bleu/chrf/bertscore/comet already done (702k rows)
+- New metrics: xcomet, xcometxxl, cometkiwi, cometkiwi23, gemba, ensemble
+- New outputs: 4 additional CSV files, 5 additional plots
+
+### What the paper has when this completes
+- 32 languages, 12 families, 4 script types, 3 annotation tiers
+- 10 metrics (9 individual + ensemble): BLEU, ChrF, BERTScore, COMET, xCOMET-XL, xCOMET-XXL, Kiwi-22, Kiwi-23-XL, GEMBA, Ensemble
+- Segment-level AND system-level correlations (standard WMT table)
+- Domain-controlled analysis (news vs. conversational)
+- Reference quality controlled analysis (MQM professional vs. DA crowd)
+- Score distribution diagnostics
+- Inter-metric redundancy map
+- Williams tests, bootstrap CIs, SPA, accuracy/fluency category breakdown
+
+This is a complete paper. The only remaining gaps are MetricX (blocked), human Tier 2 validation (requires humans), and writing.
+
+---
+
 ## 2026-05-08 (Session 8 — domain analysis, CI bands, GEMBA, encoder cache fix)
 
 ### What we did
