@@ -17,9 +17,12 @@ import pandas as pd
 from mqmbench.analysis.correlation import (
     analyze_metric_disagreements,
     analyze_tier_anomaly,
+    compute_metric_correlations,
     kiwi_vs_comet_by_tier,
+    reference_quality_effect,
     run_correlation_analysis,
     run_domain_analysis,
+    run_system_level_analysis,
     run_williams_tests,
     summarize_by_family,
     summarize_by_script,
@@ -32,7 +35,11 @@ from mqmbench.analysis.plots import (
     plot_domain_analysis,
     plot_kiwi_vs_comet_by_tier,
     plot_metric_category_heatmap,
+    plot_metric_correlation_matrix,
     plot_nontranslation_detection,
+    plot_reference_quality_effect,
+    plot_score_distributions,
+    plot_system_vs_segment_correlation,
     plot_tier_anomaly,
 )
 from mqmbench.config import init_settings, settings
@@ -190,6 +197,27 @@ def run_pipeline(settings_file: Optional[str] = None) -> dict:
     else:
         logger.info("  Skipped (no 'domain' column in scores)")
 
+    logger.info("=== System-level Analysis ===")
+    sys_corr_df = run_system_level_analysis(full_scores_df, metric_columns,
+                                            resource_tiers=resource_tiers)
+    if not sys_corr_df.empty:
+        logger.info(f"  System-level analysis: {len(sys_corr_df)} (lang×metric) rows")
+    else:
+        logger.info("  Skipped (no 'system' column in scores)")
+
+    logger.info("=== Inter-metric Correlation Matrix ===")
+    metric_corr_matrix = compute_metric_correlations(full_scores_df, metric_columns)
+    if not metric_corr_matrix.empty:
+        logger.info(f"  Metric correlation matrix: {metric_corr_matrix.shape}")
+
+    logger.info("=== Reference Quality Effect ===")
+    ref_quality_df = reference_quality_effect(full_scores_df, metric_columns,
+                                              resource_tiers=resource_tiers)
+    if not ref_quality_df.empty:
+        logger.info(f"  Reference quality effect: {len(ref_quality_df)} rows")
+    else:
+        logger.info("  Skipped (missing COMET or Kiwi columns)")
+
     corr_df.to_csv(output_dir / "correlations.csv", index=False)
     tier_summary.to_csv(output_dir / "tier_summary.csv", index=False)
     script_summary.to_csv(output_dir / "script_type_summary.csv", index=False)
@@ -206,6 +234,12 @@ def run_pipeline(settings_file: Optional[str] = None) -> dict:
         anomaly_df.to_csv(output_dir / "tier_anomaly.csv", index=False)
     if not domain_df.empty:
         domain_df.to_csv(output_dir / "domain_analysis.csv", index=False)
+    if not sys_corr_df.empty:
+        sys_corr_df.to_csv(output_dir / "system_level_correlations.csv", index=False)
+    if not metric_corr_matrix.empty:
+        metric_corr_matrix.to_csv(output_dir / "metric_correlation_matrix.csv")
+    if not ref_quality_df.empty:
+        ref_quality_df.to_csv(output_dir / "reference_quality_effect.csv", index=False)
 
     logger.info("=== Generating Plots ===")
     plot_correlation_by_resource_level(corr_df, plots_dir / "correlation_by_tier.png")
@@ -220,6 +254,18 @@ def run_pipeline(settings_file: Optional[str] = None) -> dict:
         plot_tier_anomaly(anomaly_df, plots_dir / "tier_anomaly.png")
     if not domain_df.empty:
         plot_domain_analysis(domain_df, plots_dir / "domain_analysis.png")
+    plot_score_distributions(full_scores_df, metric_columns,
+                             resource_tiers=resource_tiers,
+                             out_path=plots_dir / "score_distributions.png")
+    if not metric_corr_matrix.empty:
+        plot_metric_correlation_matrix(metric_corr_matrix,
+                                       plots_dir / "metric_correlation_matrix.png")
+    if not sys_corr_df.empty:
+        plot_system_vs_segment_correlation(corr_df, sys_corr_df,
+                                           plots_dir / "system_vs_segment.png")
+    if not ref_quality_df.empty:
+        plot_reference_quality_effect(ref_quality_df,
+                                      plots_dir / "reference_quality_effect.png")
 
     logger.info(f"Pipeline complete. Results saved to {output_dir}/")
     return {
@@ -233,6 +279,9 @@ def run_pipeline(settings_file: Optional[str] = None) -> dict:
         "kiwi_vs_comet": kiwi_df,
         "tier_anomaly": anomaly_df,
         "domain_analysis": domain_df,
+        "system_level_correlations": sys_corr_df,
+        "metric_correlation_matrix": metric_corr_matrix,
+        "reference_quality_effect": ref_quality_df,
     }
 
 
@@ -400,6 +449,14 @@ def _run_metrics(scores_df: pd.DataFrame, cfg, checkpoint_dir: Path | None = Non
                                     model_name=cfg.metrics.gemba_model)
         scores_df["gemba"] = [1.0 / (1.0 + p) for p in raw_penalties]
         added_columns.append("gemba")
+
+    # Ensemble: average of available neural metrics (no GPU cost)
+    neural = [c for c in ["comet", "xcomet", "xcometxxl", "cometkiwi", "cometkiwi23"]
+              if c in scores_df.columns]
+    if len(neural) >= 2:
+        scores_df["ensemble"] = scores_df[neural].mean(axis=1)
+        added_columns.append("ensemble")
+        logger.info(f"Ensemble metric computed from: {neural}")
 
     return added_columns
 

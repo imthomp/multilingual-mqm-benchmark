@@ -659,3 +659,142 @@ def analyze_tier_anomaly(
     if not rows:
         return pd.DataFrame()
     return pd.DataFrame(rows).sort_values(["resource_tier", "lang", "metric", "year"])
+
+
+def run_system_level_analysis(
+    scores_df: pd.DataFrame,
+    metric_columns: list[str],
+    human_column: str = "quality_score",
+    resource_tiers: Optional[dict[str, list[str]]] = None,
+    min_systems: int = 5,
+) -> pd.DataFrame:
+    """System-level correlation analysis.
+
+    Aggregates metric scores per (lang, system) then correlates system rankings
+    with human quality rankings. System-level Spearman r is the primary measure
+    used in the WMT Metrics Shared Task. It is typically much higher than
+    segment-level, which is itself a key finding: automated metrics are much
+    better at ranking MT systems than at scoring individual translations.
+
+    Args:
+        scores_df: Segment-level scores; must have a 'system' column.
+        metric_columns: Metric columns to evaluate.
+        min_systems: Skip languages with fewer distinct systems (unstable correlation).
+
+    Returns:
+        DataFrame like run_correlation_analysis() with an extra 'level' = 'system'
+        column. Empty if 'system' column is absent.
+    """
+    if "system" not in scores_df.columns:
+        return pd.DataFrame()
+    if resource_tiers is None:
+        resource_tiers = RESOURCE_TIERS
+
+    lang_to_tier = {lang: tier for tier, langs in resource_tiers.items() for lang in langs}
+    lang_to_family = {lang: fam for fam, langs in LANGUAGE_FAMILIES.items() for lang in langs}
+    lang_to_script = {lang: stype for stype, langs in SCRIPT_TYPES.items() for lang in langs}
+
+    rows = []
+    for lang, group in scores_df.groupby("lang"):
+        n_systems = group["system"].nunique()
+        if n_systems < min_systems:
+            continue
+        sys_df = (
+            group.groupby("system")[[human_column] + [m for m in metric_columns if m in group.columns]]
+            .mean()
+            .reset_index()
+        )
+        human = sys_df[human_column].tolist()
+        domain = (
+            group["domain"].mode().iloc[0]
+            if "domain" in group.columns and not group["domain"].isna().all()
+            else "unknown"
+        )
+        for metric in metric_columns:
+            if metric not in sys_df.columns or sys_df[metric].isna().all():
+                continue
+            result = correlate_metric_vs_human(human, sys_df[metric].tolist(), metric, str(lang))
+            result["resource_tier"] = lang_to_tier.get(str(lang), "unknown")
+            result["language_family"] = lang_to_family.get(str(lang), "unknown")
+            result["script_type"] = lang_to_script.get(str(lang), "unknown")
+            result["domain"] = domain
+            result["n_systems"] = n_systems
+            result["level"] = "system"
+            rows.append(result)
+
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).sort_values(["metric", "resource_tier", "lang"]).reset_index(drop=True)
+
+
+def compute_metric_correlations(
+    scores_df: pd.DataFrame,
+    metric_columns: list[str],
+) -> pd.DataFrame:
+    """Pairwise Spearman correlation matrix between all metrics.
+
+    High inter-metric correlation → metrics are redundant for ranking purposes.
+    Low inter-metric correlation → complementary signals (ensemble could help).
+    Computed over all segments pooled across languages and tiers.
+
+    Returns:
+        Square DataFrame of Spearman r values (metric × metric).
+    """
+    valid_cols = [c for c in metric_columns if c in scores_df.columns]
+    if len(valid_cols) < 2:
+        return pd.DataFrame()
+    return scores_df[valid_cols].corr(method="spearman")
+
+
+def reference_quality_effect(
+    scores_df: pd.DataFrame,
+    metric_columns: list[str],
+    human_column: str = "quality_score",
+    resource_tiers: Optional[dict[str, list[str]]] = None,
+) -> pd.DataFrame:
+    """Compare COMET vs. COMET-Kiwi advantage split by reference quality tier.
+
+    Compares how much reference-free Kiwi gains (or loses) relative to
+    reference-based COMET when references are professional MQM annotations
+    vs. crowd-sourced Direct Assessment ratings. If Kiwi's advantage grows
+    on DA (noisier references), that supports the hypothesis that reference
+    quality is a confounding factor in metric reliability for low-resource langs.
+
+    Returns:
+        DataFrame with per-(lang, annotation_tier) advantage values. Empty if
+        neither COMET nor any Kiwi variant is available.
+    """
+    available = set(scores_df.columns)
+    kiwi_cols = [m for m in ["cometkiwi", "cometkiwi23"] if m in available]
+    if "comet" not in available or not kiwi_cols or human_column not in available:
+        return pd.DataFrame()
+    if resource_tiers is None:
+        resource_tiers = RESOURCE_TIERS
+
+    lang_to_tier = {lang: tier for tier, langs in resource_tiers.items() for lang in langs}
+    rows = []
+    for (lang, ann_tier), group in scores_df.groupby(["lang", "annotation_tier"]):
+        human = group[human_column].dropna().tolist()
+        if len(human) < 10:
+            continue
+        comet_r = None
+        if "comet" in group.columns and not group["comet"].isna().all():
+            comet_r, _ = _spearman(human, group["comet"].dropna().reindex(group.index).fillna(0).tolist())
+        for kiwi in kiwi_cols:
+            if group[kiwi].isna().all():
+                continue
+            kiwi_r, _ = _spearman(human, group[kiwi].dropna().reindex(group.index).fillna(0).tolist())
+            rows.append({
+                "lang": str(lang),
+                "annotation_tier": str(ann_tier),
+                "resource_tier": lang_to_tier.get(str(lang), "unknown"),
+                "kiwi_variant": kiwi,
+                "comet_spearman_r": comet_r,
+                "kiwi_spearman_r": kiwi_r,
+                "kiwi_advantage": (kiwi_r - comet_r) if comet_r is not None else None,
+                "n": len(human),
+            })
+
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).sort_values(["kiwi_variant", "annotation_tier", "lang"]).reset_index(drop=True)

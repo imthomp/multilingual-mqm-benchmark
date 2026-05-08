@@ -1,5 +1,6 @@
 """Plotting functions for benchmark analysis."""
 
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -259,6 +260,167 @@ def plot_tier_anomaly(anomaly_df: pd.DataFrame, out_path):
                  fontsize=12, y=1.01)
     plt.tight_layout()
     plt.savefig(out_path, bbox_inches="tight")
+    plt.close()
+
+
+def plot_score_distributions(scores_df: pd.DataFrame, metric_columns: list[str],
+                             resource_tiers: dict, out_path):
+    """Violin plot of raw metric scores by resource tier.
+
+    Shows whether metrics use their full score range for low-resource languages
+    or cluster near the mean (low variance = low discriminative power even when
+    correlation is positive).
+    """
+    from mqmbench.analysis.correlation import RESOURCE_TIERS
+    if resource_tiers is None:
+        resource_tiers = RESOURCE_TIERS
+    lang_to_tier = {lang: tier for tier, langs in resource_tiers.items() for lang in langs}
+
+    plot_cols = [c for c in metric_columns if c in scores_df.columns]
+    if not plot_cols:
+        return
+
+    df = scores_df.copy()
+    df["resource_tier"] = df["lang"].map(lang_to_tier).fillna("unknown")
+    melted = df[["resource_tier"] + plot_cols].melt(
+        id_vars="resource_tier", var_name="metric", value_name="score"
+    ).dropna(subset=["score"])
+
+    tier_order = [t for t in ["high", "medium", "low"] if t in melted["resource_tier"].values]
+    n_metrics = melted["metric"].nunique()
+    fig, ax = plt.subplots(figsize=(max(10, n_metrics * 1.6), 6))
+    sns.violinplot(
+        data=melted, x="metric", y="score", hue="resource_tier",
+        hue_order=tier_order, palette="viridis", ax=ax,
+        inner="quartile", cut=0, density_norm="width",
+    )
+    ax.set_title("Metric Score Distributions by Resource Tier\n"
+                 "(narrow violin = low discriminative range; wide = full score range used)")
+    ax.set_ylabel("Metric Score (normalised scale)")
+    ax.set_xlabel("Metric")
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(handles[:len(tier_order)], [l.capitalize() for l in labels[:len(tier_order)]],
+              title="Resource Tier", frameon=False)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+
+
+def plot_metric_correlation_matrix(corr_matrix: pd.DataFrame, out_path):
+    """Heatmap of pairwise Spearman r between all metrics.
+
+    High inter-metric correlation = redundant. Low = complementary.
+    Helps justify which metrics to include in the recommendation table.
+    """
+    if corr_matrix.empty:
+        return
+    fig, ax = plt.subplots(figsize=(max(7, len(corr_matrix) * 0.9),
+                                    max(6, len(corr_matrix) * 0.8)))
+    mask = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
+    sns.heatmap(
+        corr_matrix, mask=mask, annot=True, fmt=".2f",
+        cmap="RdYlGn", vmin=-1, vmax=1, center=0,
+        linewidths=0.5, ax=ax, square=True,
+    )
+    ax.set_title("Inter-metric Spearman ρ (all segments pooled)\n"
+                 "High = redundant; Low = complementary signal")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+
+
+def plot_system_vs_segment_correlation(seg_df: pd.DataFrame, sys_df: pd.DataFrame, out_path):
+    """Bar chart comparing system-level vs. segment-level Spearman r per metric.
+
+    System-level is typically much higher. The gap quantifies how much information
+    is lost when using a metric to score individual translations vs. ranking systems.
+    """
+    if seg_df.empty or sys_df.empty:
+        return
+
+    metrics = sorted(set(seg_df["metric"].unique()) & set(sys_df["metric"].unique()))
+    if not metrics:
+        return
+
+    seg_means = seg_df.groupby("metric")["spearman_r"].mean().reindex(metrics)
+    sys_means = sys_df.groupby("metric")["spearman_r"].mean().reindex(metrics)
+
+    x = range(len(metrics))
+    width = 0.38
+    fig, ax = plt.subplots(figsize=(max(9, len(metrics) * 1.4), 5.5))
+    bars1 = ax.bar([i - width / 2 for i in x], seg_means, width,
+                   label="Segment-level", color="#4393c3", alpha=0.85)
+    bars2 = ax.bar([i + width / 2 for i in x], sys_means, width,
+                   label="System-level", color="#d6604d", alpha=0.85)
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(metrics, rotation=20, ha="right")
+    ax.axhline(0, color="black", linewidth=0.6, linestyle="--", alpha=0.4)
+    ax.set_ylabel("Mean Spearman ρ (across all languages)")
+    ax.set_xlabel("Metric")
+    ax.set_title("System-level vs. Segment-level Spearman ρ\n"
+                 "(system-level = ranking MT systems; gap shows metric granularity limits)")
+    ax.legend(frameon=False)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+
+
+def plot_reference_quality_effect(ref_quality_df: pd.DataFrame, out_path):
+    """Show how Kiwi advantage over COMET changes with reference quality.
+
+    MQM = professional references; DA = crowd-sourced. If Kiwi gains more on DA,
+    that supports the hypothesis that reference quality drives the Kiwi advantage.
+    """
+    if ref_quality_df.empty or "kiwi_advantage" not in ref_quality_df.columns:
+        return
+
+    tier_order = [t for t in ["high", "medium", "low"]
+                  if t in ref_quality_df["resource_tier"].values]
+    tier_colors = {"high": "#2166ac", "medium": "#4dac26", "low": "#d01c8b"}
+
+    variants = sorted(ref_quality_df["kiwi_variant"].unique())
+    ann_tiers = sorted(ref_quality_df["annotation_tier"].unique())
+    n_rows = len(variants)
+    fig, axes = plt.subplots(n_rows, 1, figsize=(10, 4.5 * n_rows), squeeze=False)
+
+    for i, variant in enumerate(variants):
+        ax = axes[i][0]
+        sub = ref_quality_df[ref_quality_df["kiwi_variant"] == variant]
+        for ann_tier in ann_tiers:
+            at_sub = sub[sub["annotation_tier"] == ann_tier].dropna(subset=["kiwi_advantage"])
+            if at_sub.empty:
+                continue
+            for tier in tier_order:
+                pts = at_sub[at_sub["resource_tier"] == tier]
+                if pts.empty:
+                    continue
+                jitter = {"human_mqm": -0.15, "human_da": 0.15}.get(ann_tier, 0)
+                x_pos = {"human_mqm": 0, "human_da": 1}.get(ann_tier, 0)
+                ax.scatter([x_pos + jitter] * len(pts), pts["kiwi_advantage"],
+                           color=tier_colors[tier], label=f"{tier} ({ann_tier})",
+                           s=60, alpha=0.8, zorder=3)
+                for _, row in pts.iterrows():
+                    ax.annotate(row["lang"].upper(),
+                                (x_pos + jitter, row["kiwi_advantage"]),
+                                fontsize=6.5, ha="center", va="bottom",
+                                color=tier_colors[tier])
+        ax.axhline(0, color="black", linewidth=0.8, linestyle="--", alpha=0.5,
+                   label="COMET parity")
+        ax.set_xticks([0, 1])
+        ax.set_xticklabels(["MQM (professional refs)", "DA (crowd refs)"])
+        ax.set_ylabel("Kiwi Spearman ρ − COMET Spearman ρ\n(positive = Kiwi wins)")
+        ax.set_title(f"{variant} advantage over COMET by reference quality")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    plt.suptitle("Does Reference Quality Drive the Kiwi Advantage?\n"
+                 "(MQM = professional; DA = crowd-sourced)", fontsize=12, y=1.01)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close()
 
 
