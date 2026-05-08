@@ -1,5 +1,55 @@
 # Research Log — Multilingual MQM Benchmark
 
+## 2026-05-08 (Session 8 — domain analysis, CI bands, GEMBA, encoder cache fix)
+
+### What we did
+
+**Root-caused job 11552886 failure:**
+- xCOMET-XL and xCOMET-XXL use `facebook/xlm-roberta-xl` / `facebook/xlm-roberta-xxl` as their encoders
+- With `HF_HUB_OFFLINE=1`, the tokenizer vocabulary file couldn't load even though the checkpoint was cached
+- Fix: ran `snapshot_download('facebook/xlm-roberta-xl')` and `snapshot_download('facebook/xlm-roberta-xxl')` on the login node
+- Same applies to wmt23-cometkiwi-da-xl (also uses xlm-roberta-xl)
+- Checkpoint from the failed job preserved: bleu, chrf, bertscore, comet across 702,970 rows with segment_id — will be used for resume
+
+**Domain-stratified analysis — new:**
+- `run_domain_analysis()` in `correlation.py`: groups `(lang, domain)` from `scores_df` and runs `correlate_metric_vs_human()` within each domain separately
+- Minimum 30 segments per group to ensure stable correlation estimates
+- Returns same schema as `run_correlation_analysis()` plus `domain` column
+- Saves to `results/domain_analysis.csv`
+- `plot_domain_analysis()`: grouped bar chart (news vs. other), SD error bars, one panel per measure
+- This turns the Ukrainian domain confound into a paper-strength finding: "within-domain, metric reliability is consistent; pooling across domains depresses correlations for languages evaluated on non-news text"
+
+**CI bands on main plots:**
+- `plot_correlation_by_resource_level()`: switched y-axis from Kendall τ to Spearman ρ (reviewers expect it; more intuitive); added `errorbar="sd"` (±1 SD across languages in tier); added `stripplot` overlay showing individual language points
+- `plot_correlation_by_script_type()`: same upgrades
+- `plot_kiwi_vs_comet_by_tier()`: 95% bootstrap CI error bars per language point (using `spearman_ci_lo`/`spearman_ci_hi` from `corr_df`); handles kiwi22 vs. kiwi23 in a multi-row grid
+
+**GEMBA-MQM as evaluated metric — enabled:**
+- `run_gemba = true` in settings.toml (Llama-3.1-8B-Instruct already cached from Session 5)
+- Circular evaluation exclusion already in place: GEMBA scores on `synthetic_mqm` tier are dropped from `correlations.csv` before analysis
+- Adds LLM-as-judge to the metric comparison (BLEU/ChrF → BERTScore → COMET-family → GEMBA)
+
+**Job 11784597 submitted (20h):**
+- Will resume from checkpoint (bleu/chrf/bertscore/comet already done; 702k rows)
+- New metrics to compute: xcomet, xcometxxl, cometkiwi, cometkiwi23, gemba
+- New output files: `domain_analysis.csv`, updated plots with CI bands
+
+### What the paper now has when this job completes
+- 32 languages, 12 families, 4 script types, 3 annotation tiers
+- 9 metrics: BLEU, ChrF, BERTScore, COMET, xCOMET-XL, xCOMET-XXL, Kiwi-22, Kiwi-23, GEMBA
+- All correlation measures: Pearson, Spearman, Kendall τ, pairwise accuracy, SPA
+- Williams significance tests, bootstrap 95% CIs
+- Accuracy vs. fluency category breakdown (de, zh, he, es spans)
+- Domain-controlled analysis (news vs. other)
+- COMET-Kiwi 2022 vs 2023 temporal comparison
+
+### Next after job completes
+- Verify domain_analysis.csv shows the expected pattern (uk much lower in "other" domain than in "news")
+- Check if GEMBA lands between BERTScore and COMET as expected for high-resource, or closer to surface metrics for low-resource
+- Start writing the paper
+
+---
+
 ## 2026-04-21 (Session 7 — Tier 2 expansion, xCOMET, checkpoint fix)
 
 ### What we did
