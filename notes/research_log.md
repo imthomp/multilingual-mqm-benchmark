@@ -1,5 +1,62 @@
 # Research Log — Multilingual MQM Benchmark
 
+## 2026-05-08 (Session 8 continued — BLEURT, direction, morphology, length, rater agreement)
+
+### Corrections to previous "blocked" assessments
+
+- **BLEURT**: was wrongly called blocked. `Elron/bleurt-large-512` on HuggingFace is a
+  PyTorch `BertForSequenceClassification` regression model — no TensorFlow needed.
+  Implemented in `src/mqmbench/metrics/bleurt.py` and added to run list.
+- **Morphological complexity**: was wrongly called blocked. Implemented as a lookup
+  table (same pattern as `SCRIPT_TYPES`) — no external data needed.
+
+### New additions
+
+**BLEURT-large-512** (`src/mqmbench/metrics/bleurt.py`):
+- BertForSequenceClassification regression model; takes (reference, hypothesis) order
+- Output: approx. [-1, 2] (higher = better); pre-cached from `Elron/bleurt-large-512`
+- Fills the "learned regression metric" gap alongside COMET; both are neural but BLEURT
+  uses a BERT encoder trained on WMT rating data rather than a multilingual COMET backbone
+
+**Translation direction analysis** (`run_direction_analysis`):
+- Splits languages by WMT pair direction: x_to_en (zh-en, he-en) vs. en_to_x (everything else)
+- Tests whether COMET/BERTScore trained on en→X data are less reliable for X→en evaluation
+- Output: `direction_analysis.csv`, `plots/direction_analysis.png`
+
+**Morphological type analysis** (`run_morphology_analysis`):
+- Aggregates per-language correlations by morphological type (isolating / agglutinative / fusional)
+- Key hypothesis: BLEU/ChrF hurt more on agglutinative languages (tr, fi, ka, ta) due to
+  high type-to-token ratio; neural metrics should be more robust
+- Output: `morphology_analysis.csv`, `plots/morphology_analysis.png`
+
+**Sentence length analysis** (`run_length_analysis`):
+- Bins segments: short (<10 tokens), medium (10–30), long (>30)
+- Hypothesis: COMET/BERTScore degrade more on short segments (less semantic context)
+  while BLEU degrades uniformly
+- Output: `length_analysis.csv`, `plots/length_analysis.png`
+
+**Inter-rater agreement analysis** (`run_rater_agreement_analysis`):
+- Uses Google TSV `rater` column to compute per-segment fraction of raters who flagged error
+- High agreement (all agree or all disagree) = clean signal; low = ambiguous
+- Hypothesis: all metrics should be more reliable when raters agree
+- Output: `rater_agreement_analysis.csv`, `plots/rater_agreement.png`
+
+### Job 11787744 (replaces 11787616, 20h, 160G)
+- Cancelled 11787616 mid-NLLB-translation to add new code
+- FLORES+ for th/my/am/ka already cached; NLLB will rerun for new langs
+- Checkpoint preserved: bleu/chrf/bertscore/comet for 702k rows
+- New metrics to compute: bleurt, xcomet, cometkiwi, cometkiwi23, gemba, ensemble
+
+### Full paper experiment list (when job completes)
+- 32 languages, 12 families, 4 script types, 3 morphological types, 2 directions
+- 10 metrics + ensemble: BLEU, ChrF, BLEURT, BERTScore, COMET, xCOMET-XL,
+  Kiwi-22, Kiwi-23-XL, GEMBA, Ensemble
+- Analyses: segment-level, system-level, domain, direction, morphology, length,
+  rater agreement, reference quality, inter-metric correlation, score distributions,
+  category (accuracy/fluency), tier anomaly, Williams tests, bootstrap CIs, SPA
+
+---
+
 ## 2026-05-08 (Session 8 continued — five new analyses added)
 
 ### What we added
