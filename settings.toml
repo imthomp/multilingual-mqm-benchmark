@@ -82,7 +82,9 @@ wmt_mqm_span_dir = "../wmt-mqm-human-evaluation"
 # Metrics to run. Comment out any you want to skip.
 # xcomet and cometkiwi are pre-cached (run download_model() on login node before submitting).
 # XCOMET-XL requires gated HuggingFace access: https://huggingface.co/Unbabel/XCOMET-XL
-run = ["bleu", "chrf", "bertscore", "comet", "xcomet", "xcometxxl", "cometkiwi", "cometkiwi23"]
+# xcometxxl (42.9 GB checkpoint) exceeds 128 GB RAM headroom when loaded with other models.
+# xcomet (13.9 GB) is the main xCOMET contribution; XXL adds marginal benefit.
+run = ["bleu", "chrf", "bertscore", "comet", "xcomet", "cometkiwi", "cometkiwi23"]
 
 # GEMBA as an evaluated metric (same local model, HF pipeline).
 # Also used as the LLM for Tier 2 synthetic MQM annotation generation.

@@ -451,7 +451,7 @@ def _run_metrics(scores_df: pd.DataFrame, cfg, checkpoint_dir: Path | None = Non
         added_columns.append("gemba")
 
     # Ensemble: average of available neural metrics (no GPU cost)
-    neural = [c for c in ["comet", "xcomet", "xcometxxl", "cometkiwi", "cometkiwi23"]
+    neural = [c for c in ["comet", "xcomet", "cometkiwi", "cometkiwi23"]
               if c in scores_df.columns]
     if len(neural) >= 2:
         scores_df["ensemble"] = scores_df[neural].mean(axis=1)

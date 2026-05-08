@@ -6,7 +6,7 @@
 #SBATCH --time=20:00:00
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
-#SBATCH --mem=128G
+#SBATCH --mem=160G
 #SBATCH --gres=gpu:1
 #SBATCH --requeue
 #SBATCH --signal=SIGHUP@90
