@@ -520,11 +520,15 @@ def kiwi_vs_comet_by_tier(corr_df: pd.DataFrame) -> pd.DataFrame:
 
     id_cols = ["lang", "resource_tier", "language_family", "script_type"]
     val_cols = ["spearman_r", "pairwise_acc", "spa", "kendall_tau"]
+    # Also carry bootstrap CI columns for error bars in plots
+    ci_cols = ["spearman_ci_lo", "spearman_ci_hi"]
     val_cols = [c for c in val_cols if c in corr_df.columns]
+    ci_cols = [c for c in ci_cols if c in corr_df.columns]
 
     def _extract(metric_name: str, suffix: str) -> pd.DataFrame:
-        sub = corr_df[corr_df["metric"] == metric_name][id_cols + val_cols].copy()
-        return sub.rename(columns={c: f"{c}_{suffix}" for c in val_cols})
+        all_cols = val_cols + ci_cols
+        sub = corr_df[corr_df["metric"] == metric_name][id_cols + all_cols].copy()
+        return sub.rename(columns={c: f"{c}_{suffix}" for c in all_cols})
 
     result = _extract("comet", "comet")
     for variant in kiwi_variants:
@@ -535,6 +539,59 @@ def kiwi_vs_comet_by_tier(corr_df: pd.DataFrame) -> pd.DataFrame:
             result[f"{suffix}_advantage_{col}"] = result[f"{col}_{suffix}"] - result[f"{col}_comet"]
 
     return result.sort_values(["resource_tier", "lang"]).reset_index(drop=True)
+
+
+def run_domain_analysis(
+    scores_df: pd.DataFrame,
+    metric_columns: list[str],
+    human_column: str = "quality_score",
+    resource_tiers: Optional[dict[str, list[str]]] = None,
+    min_segments: int = 30,
+) -> pd.DataFrame:
+    """Correlation analysis stratified by domain (e.g. news vs. conversational).
+
+    Computes per-(lang, domain) Spearman r and SPA so we can show that metric
+    reliability is stable within domains but drops when domains are pooled —
+    addressing the Ukrainian conversational-text confound and providing a
+    controlled within-domain estimate.
+
+    Args:
+        scores_df: Full scores DataFrame with a 'domain' column.
+        metric_columns: Metric columns to evaluate.
+        human_column: Human quality score column.
+        min_segments: Skip (lang, domain) groups with fewer segments.
+
+    Returns:
+        DataFrame like run_correlation_analysis() plus a 'domain' column.
+        Empty if 'domain' column is absent.
+    """
+    if "domain" not in scores_df.columns:
+        return pd.DataFrame()
+    if resource_tiers is None:
+        resource_tiers = RESOURCE_TIERS
+
+    lang_to_tier = {lang: tier for tier, langs in resource_tiers.items() for lang in langs}
+    lang_to_family = {lang: fam for fam, langs in LANGUAGE_FAMILIES.items() for lang in langs}
+    lang_to_script = {lang: stype for stype, langs in SCRIPT_TYPES.items() for lang in langs}
+
+    rows = []
+    for (lang, domain), group in scores_df.groupby(["lang", "domain"]):
+        if len(group) < min_segments or group[human_column].isna().all():
+            continue
+        human = group[human_column].tolist()
+        for metric in metric_columns:
+            if metric not in group.columns or group[metric].isna().all():
+                continue
+            result = correlate_metric_vs_human(human, group[metric].tolist(), metric, str(lang))
+            result["resource_tier"] = lang_to_tier.get(str(lang), "unknown")
+            result["language_family"] = lang_to_family.get(str(lang), "unknown")
+            result["script_type"] = lang_to_script.get(str(lang), "unknown")
+            result["domain"] = str(domain)
+            rows.append(result)
+
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).sort_values(["domain", "metric", "lang"]).reset_index(drop=True)
 
 
 def analyze_tier_anomaly(

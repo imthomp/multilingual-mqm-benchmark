@@ -19,6 +19,7 @@ from mqmbench.analysis.correlation import (
     analyze_tier_anomaly,
     kiwi_vs_comet_by_tier,
     run_correlation_analysis,
+    run_domain_analysis,
     run_williams_tests,
     summarize_by_family,
     summarize_by_script,
@@ -28,6 +29,7 @@ from mqmbench.analysis.plots import (
     plot_correlation_by_language_family,
     plot_correlation_by_resource_level,
     plot_correlation_by_script_type,
+    plot_domain_analysis,
     plot_kiwi_vs_comet_by_tier,
     plot_metric_category_heatmap,
     plot_nontranslation_detection,
@@ -179,6 +181,15 @@ def run_pipeline(settings_file: Optional[str] = None) -> dict:
     else:
         logger.info("  Skipped (no 'year' column in scores — check wmt_mqm loader)")
 
+    logger.info("=== Domain-stratified Analysis ===")
+    domain_df = run_domain_analysis(full_scores_df, metric_columns,
+                                    resource_tiers=resource_tiers)
+    if not domain_df.empty:
+        logger.info(f"  Domain analysis: {len(domain_df)} (lang×domain×metric) rows, "
+                    f"domains: {sorted(domain_df['domain'].unique())}")
+    else:
+        logger.info("  Skipped (no 'domain' column in scores)")
+
     corr_df.to_csv(output_dir / "correlations.csv", index=False)
     tier_summary.to_csv(output_dir / "tier_summary.csv", index=False)
     script_summary.to_csv(output_dir / "script_type_summary.csv", index=False)
@@ -193,6 +204,8 @@ def run_pipeline(settings_file: Optional[str] = None) -> dict:
         kiwi_df.to_csv(output_dir / "kiwi_vs_comet.csv", index=False)
     if not anomaly_df.empty:
         anomaly_df.to_csv(output_dir / "tier_anomaly.csv", index=False)
+    if not domain_df.empty:
+        domain_df.to_csv(output_dir / "domain_analysis.csv", index=False)
 
     logger.info("=== Generating Plots ===")
     plot_correlation_by_resource_level(corr_df, plots_dir / "correlation_by_tier.png")
@@ -205,6 +218,8 @@ def run_pipeline(settings_file: Optional[str] = None) -> dict:
         plot_kiwi_vs_comet_by_tier(kiwi_df, plots_dir / "kiwi_vs_comet.png")
     if not anomaly_df.empty:
         plot_tier_anomaly(anomaly_df, plots_dir / "tier_anomaly.png")
+    if not domain_df.empty:
+        plot_domain_analysis(domain_df, plots_dir / "domain_analysis.png")
 
     logger.info(f"Pipeline complete. Results saved to {output_dir}/")
     return {
@@ -217,6 +232,7 @@ def run_pipeline(settings_file: Optional[str] = None) -> dict:
         "metric_disagreements": disagreement_df,
         "kiwi_vs_comet": kiwi_df,
         "tier_anomaly": anomaly_df,
+        "domain_analysis": domain_df,
     }
 
 
